@@ -1,39 +1,38 @@
 # RIR-API
 
-API REST para procesamiento y analisis de respuestas al impulso segun la norma ISO 3382.
+API REST para procesamiento y análisis de respuestas al impulso según la norma ISO 3382.
 
-<!-- Badges -->
-![CI](../../actions/workflows/ci.yml/badge.svg)
-![Python](https://img.shields.io/badge/python-3.12+-blue.svg)
-![License](https://img.shields.io/badge/license-MIT-green.svg)
+## Descripción
 
-## Descripcion
+RIR-API es un proyecto educativo que implementa una API REST (FastAPI) con una cadena completa de procesamiento acústico: generación de señales de excitación, procesamiento de respuestas al impulso por bandas de octava y cálculo de parámetros acústicos (EDT, T20, T30) según la norma ISO 3382-1.
 
-RIR-API es un proyecto educativo que implementa una API REST (FastAPI) con una cadena
-completa de procesamiento acustico: generacion de senales de excitacion, procesamiento
-de respuestas al impulso por bandas de octava y calculo de parametros acusticos
-(EDT, T20, T30) segun la norma ISO 3382-1.
+## Integrantes
 
-> **API de referencia**: Explorar la [documentacion interactiva de la API de la catedra](https://rir-api.onrender.com/docs) para entender la estructura de endpoints, schemas y respuestas esperadas.
+- Agustin Birarelli
+    - Legajo 69574
+    - Responsable de generación de señales
 
-## Requisitos previos
+- Ivo Manoli
+    - Legajo 64189
+    - Responsable de procesamiento
 
-- Python 3.12 o superior
-- [uv](https://docs.astral.sh/uv/) (gestor de paquetes y entornos virtuales)
+- Gaspar Dallinge
+    - Legajo 62751
+    - Responsable de testing/CI y documentación
 
-## Instalacion
+## Instalación
 
 ```bash
 # Clonar el repositorio
-git clone <URL-del-fork>
-cd rir-api
+git clone https://github.com/AgusBira/signal-systems.git
+cd trabajo_practico/RIR-API
 
 # Crear entorno virtual e instalar dependencias
-uv venv
+uv sync
 uv pip install -e ".[dev]"
 ```
 
-## Ejecucion
+## Ejecución
 
 ```bash
 # Iniciar la API con hot-reload
@@ -43,7 +42,7 @@ uvicorn app.main:app --reload
 python -m app.main
 ```
 
-La API estara disponible en `http://localhost:8000`. Documentacion interactiva en:
+La API estara disponible en `http://localhost:8000`. Documentación interactiva en:
 - Swagger UI: `http://localhost:8000/docs`
 - ReDoc: `http://localhost:8000/redoc`
 
@@ -56,98 +55,88 @@ rir-api/
 │   ├── main.py                    # Punto de entrada FastAPI
 │   ├── routers/
 │   │   ├── health.py              # GET /health
-│   │   ├── signals.py             # Endpoints de generacion (M1 → M3)
+│   │   ├── signals.py             # Endpoints de generación (M1 → M3)
 │   │   ├── filters.py             # Endpoints de filtrado (M2 → M3)
-│   │   ├── acoustics.py           # Endpoints de analisis (M3)
+│   │   ├── acoustics.py           # Endpoints de análisis (M3)
 │   │   └── utils.py               # Endpoints de utilidades (M3)
 │   ├── schemas/
 │   │   └── ...                    # Modelos Pydantic de request/response
 │   └── services/
-│       ├── pink_noise.py          # Generacion de ruido rosa (M1)
-│       ├── sine_sweep.py          # Generacion de sine sweep (M1)
+│       ├── pink_noise.py          # Generación de ruido rosa (M1)
+│       ├── sine_sweep.py          # Generación de sine sweep (M1)
 │       ├── signal_utils.py        # Utilidades de procesamiento (M2)
 │       ├── filter.py              # Filtros de banda de octava (M2)
-│       └── acoustic_parameters.py # Parametros acusticos ISO 3382 (M3)
+│       └── acoustic_parameters.py # Parámetros acústicos ISO 3382 (M3)
 ├── tests/
-│   ├── test_generacion.py         # Tests de generacion (M1)
+│   ├── test_generación.py         # Tests de generación (M1)
 │   ├── test_procesamiento.py      # Tests de procesamiento (M2)
-│   ├── test_analisis.py           # Tests de analisis (M3)
+│   ├── test_análisis.py           # Tests de análisis (M3)
 │   └── test_api.py                # Tests de endpoints (M3)
-├── docs/                          # Documentacion
-├── .github/workflows/ci.yml       # Integracion continua
-├── pyproject.toml                 # Configuracion del proyecto
+├── docs/                          # Documentación
+├── .github/workflows/ci.yml       # Integración continua
+├── pyproject.toml                 # Configuración del proyecto
 └── README.md
 ```
+## Diagrama de arquitectura
+```mermaid
+graph LR
+    Client --> R[Routers]
 
-## Milestones
+    R --> PN[/pink-noise/]
+    R --> SS[/sine-sweep/]
+    R --> AN[/analyze/]
 
-### M0 — Setup del entorno
-**Fecha:** Semana 5
+    R --> Sch[Schemas]
 
-- [ ] Hacer fork del repositorio template.
-- [ ] Clonar el fork y verificar que el entorno se instala correctamente.
-- [ ] Ejecutar la API: `uvicorn app.main:app --reload`.
-- [ ] Verificar que `/health` responde correctamente.
-- [ ] Ejecutar los tests (todos deben fallar con `NotImplementedError` excepto los de API).
-- [ ] Verificar que el CI funciona en GitHub Actions.
+    Sch --> Req[Request]
+    Sch --> Res[Response]
 
-### M1 — Generacion de senales
-**Fecha:** Semana 8
+    R --> S[Services]
 
-- [ ] Implementar `generar_ruido_rosa()` en `app/services/pink_noise.py`.
-- [ ] Implementar `generar_sine_sweep()` en `app/services/sine_sweep.py`.
-- [ ] Implementar `reproducir_y_grabar()`.
-- [ ] Todos los tests de `test_generacion.py` deben pasar.
+    %% M1
+    S --> Gen[Generación]
+    Gen --> PN2[Ruido rosa]
+    Gen --> SS2[Sine sweep]
 
-### M2 — Procesamiento de senales
-**Fecha:** Semana 12
+    %% M2
+    S --> Proc[Procesamiento]
+    Proc --> Filtros[Filtros]
+    Proc --> Deconv[Deconvolución]
 
-- [ ] Implementar `cargar_audio()` en `app/services/signal_utils.py`.
-- [ ] Implementar `obtener_ri_desde_sweep()` en `app/services/signal_utils.py`.
-- [ ] Implementar `filtro_octava()` en `app/services/filter.py`.
-- [ ] Implementar `a_escala_log()` en `app/services/signal_utils.py`.
-- [ ] Implementar `sintetizar_ri()` para validacion.
-- [ ] Todos los tests de `test_procesamiento.py` deben pasar.
-
-### M3 — API REST y analisis de parametros acusticos
-**Fecha:** Semana 15
-
-- [ ] Implementar `integral_schroeder()` en `app/services/acoustic_parameters.py`.
-- [ ] Implementar `regresion_lineal()` en `app/services/acoustic_parameters.py`.
-- [ ] Implementar `calcular_parametros_acusticos()` en `app/services/acoustic_parameters.py`.
-- [ ] Crear routers y schemas para exponer toda la funcionalidad como API REST.
-- [ ] Todos los tests de `test_analisis.py` y `test_api.py` deben pasar.
-- [ ] (Opcional) Implementar `metodo_lundeby()`.
-
-## Como correr los tests
-
-```bash
-# Ejecutar todos los tests
-uv run pytest -v
-
-# Ejecutar tests de un modulo especifico
-uv run pytest tests/test_generacion.py -v
-
-# Ejecutar tests de la API
-uv run pytest tests/test_api.py -v
-
-# Ejecutar tests con reporte de cobertura
-uv run pytest --tb=short
+    %% M3
+    S --> Analisis[Análisis]
+    Analisis --> Params[Parámetros acústicos]
 ```
 
-## Como correr el linter
+## Dependencias Externas
 
-```bash
-# Verificar estilo de codigo
-uv run ruff check app/ tests/
-
-# Corregir automaticamente lo que se pueda
-uv run ruff check --fix app/ tests/
-
-# Formatear el codigo
-uv run ruff format app/ tests/
+```
+R --> FastAPI[FastAPI]              # Entrada del sistema
+R --> Uvicorn[Uvicorn]              # Ejecuta la app FastAPI
+Sch --> Pydantic[Pydantic]          # Validación de datos
+S --> NumPy[NumPy]                  # Arrays, operaciones matemáticas
+S --> SciPy[SciPy]                  # Filtros, deconvolución
+S --> Audio[sounddevice]            # Captura y reproduce audio
+S --> Matplotlib[Matplotlib]        # Gráficos
 ```
 
-## Licencia
+## Estrategia de ramas
 
-Este proyecto esta licenciado bajo la Licencia MIT. Ver el archivo `LICENSE` para mas detalles.
+- main:  
+  Esta es la rama principal del proyecto. Contiene el código que está listo para producción. Solo se hacen merge a esta rama mediante Pull Requests. Cualquier cambio importante o funcionalidad nueva debe pasar por una revisión de código antes de ser fusionado en main.
+
+- feature/generacion-de-señales:
+  Esta rama es responsable de la generación de señales de excitación para la respuesta al impulso (RIR).
+  Responsable: Agustín Birarelli
+
+- feature/procesamiento-de-RI:  
+  Esta rama es responsable del procesamiento de las respuestas al impulso (RI) para obtener los parámetros acústicos necesarios según la norma ISO 3382.
+  Responsable: Ivo Manoli
+
+- feature/testing-ci:  
+  Esta rama se dedicará a la implementación de pruebas automáticas (unitarias y de integración) y la configuración de la integración continua (CI) del proyecto.  
+  Responsable: Gaspar Dallinge
+
+- feature/documentacion:  
+  Esta rama será utilizada para escribir y mantener la documentación del proyecto, como el README.md y la documentación técnica de la API.  
+  Responsable: Gaspar Dallinge
