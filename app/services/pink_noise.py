@@ -51,4 +51,4 @@ def generar_ruido_rosa(duracion: float, fs: int) -> np.ndarray:
     # Normalizar la señal resultante al rango [-1, 1].
     ruido_rosa_normalizado = ruido_rosa / np.max(np.abs(ruido_rosa)) * 0.8
     return ruido_rosa_normalizado
-raise NotImplementedError("Implementar en Milestone 1")
+
