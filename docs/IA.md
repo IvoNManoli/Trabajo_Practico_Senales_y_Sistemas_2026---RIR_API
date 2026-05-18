@@ -1,9 +1,6 @@
 # Código utilizado para generar la plantilla Markdown profesional
-import os
-
-markdown_content = """# 📋 Registro de Ingeniería de Prompts e Ingeniería Asistida (M1)
-
-Este documento sirve como registro formal de las interacciones con modelos de Inteligencia Artificial para el diseño, desarrollo y refactorización del código correspondiente al **Hito 1 (Milestone 1): Generación de Señales**.
+Este documento sirve como registro formal de las interacciones con modelos de Inteligencia Artificial para el diseño, desarrollo y refactorización del código correspondiente al 
+proyecto.
 
 ---
 
