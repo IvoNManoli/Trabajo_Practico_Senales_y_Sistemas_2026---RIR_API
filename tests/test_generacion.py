@@ -73,3 +73,19 @@ class TestGenerarSineSweep:
         expected_length = int(duracion * fs)
         assert len(sweep) == expected_length
         assert len(filtro_inv) == expected_length
+    def test_convolucion_genera_impulso(self):
+        """Verifica que sweep x filtro_inverso produce un impulso con pico > 40 dB sobre el piso."""
+        from scipy.signal import fftconvolve
+
+        sweep, filtro_inverso = generar_sine_sweep(20, 20000, 5.0, 44100)
+        resultado = fftconvolve(sweep, filtro_inverso)
+
+        indice_pico = np.argmax(np.abs(resultado))
+        valor_pico = np.abs(resultado[indice_pico])
+
+        mascara = np.ones(len(resultado), dtype=bool)
+        mascara[max(0, indice_pico - 100):indice_pico + 100] = False
+        piso = np.mean(np.abs(resultado[mascara]))
+
+        relacion_db = 20 * np.log10(valor_pico / piso)
+        assert relacion_db >= 40, f"Relacion pico/piso insuficiente: {relacion_db:.1f} dB"
