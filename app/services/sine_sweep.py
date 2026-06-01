@@ -37,4 +37,19 @@ def generar_sine_sweep(
     .. [1] Farina, A. (2000). "Simultaneous measurement of impulse response
        and distortion with a swept-sine technique."
     """
-    raise NotImplementedError("Implementar en Milestone 1")
+
+    n_muestras = int(duracion * fs)
+    tiempo = np.linspace(0, duracion, n_muestras, endpoint=False)
+    l_constante = duracion / np.log(f2 / f1)
+    fase = 2 * np.pi * f1 * l_constante * (np.exp(tiempo / l_constante) - 1)
+    sweep = np.sin(fase)
+    sweep_invertido = sweep[::-1]
+    rampa = np.exp(-tiempo / l_constante)
+    filtro_inverso = sweep_invertido * rampa
+    filtro_inverso = filtro_inverso / np.max(np.abs(filtro_inverso))
+    # Aplico una reducción de ganancia de -6 dB para no estar tan cerca de clipear
+    ganancia_headroom = 0.5
+    sweep = sweep * ganancia_headroom
+    filtro_inverso = filtro_inverso * ganancia_headroom
+
+    return sweep, filtro_inverso
