@@ -5,8 +5,11 @@ Ejecutar desde la raiz del proyecto:
 
 Genera tres PNGs en docs/m1/:
     - ruido_rosa_espectro.png
-    - sweep_espectrograma.png
+    - sweep_forma_onda.png
     - convolucion_impulso.png
+
+Los espectrogramas (ruido rosa y sweep) fueron generados externamente
+con Audacity y se encuentran en la misma carpeta como archivos PNG separados.
 """
 
 from pathlib import Path
@@ -22,7 +25,8 @@ sys.path.insert(0, str(Path(__file__).parents[2]))
 from app.services.pink_noise import generar_ruido_rosa
 from app.services.sine_sweep import generar_sine_sweep
 
-OUTPUT_DIR = Path(__file__).parent
+OUTPUT_DIR = Path(__file__).parent / "imagenes"
+OUTPUT_DIR.mkdir(exist_ok=True)
 FS = 44100
 
 
@@ -64,32 +68,24 @@ def grafico_ruido_rosa():
     print(f"  Guardado: {path}")
 
 
-# ── Grafico 2: Espectrograma del sine sweep ──────────────────────────────────
+# ── Grafico 2: Forma de onda del sine sweep ──────────────────────────────────
 
 def grafico_sweep():
-    print("Generando espectrograma del sweep...")
+    print("Generando forma de onda del sweep...")
     sweep, _ = generar_sine_sweep(f1=20, f2=20000, duracion=5.0, fs=FS)
 
-    fig, axes = plt.subplots(2, 1, figsize=(10, 7), gridspec_kw={"height_ratios": [1, 2]})
-
-    # Forma de onda
     t = np.linspace(0, 5.0, len(sweep))
-    axes[0].plot(t, sweep, lw=0.5, color="steelblue")
-    axes[0].set_ylabel("Amplitud")
-    axes[0].set_xlim(0, 5.0)
-    axes[0].set_title("Sine sweep logaritmico 20 Hz → 20 kHz, 5 s")
 
-    # Espectrograma
-    axes[1].specgram(sweep, Fs=FS, NFFT=1024, noverlap=512,
-                     cmap="inferno", scale="dB")
-    axes[1].set_yscale("log")
-    axes[1].set_ylim(20, FS / 2)
-    axes[1].set_xlabel("Tiempo (s)")
-    axes[1].set_ylabel("Frecuencia (Hz)")
-    axes[1].set_xlim(0, 5.0)
+    fig, ax = plt.subplots(figsize=(10, 3))
+    ax.plot(t, sweep, lw=0.4, color="steelblue")
+    ax.set_xlabel("Tiempo (s)")
+    ax.set_ylabel("Amplitud")
+    ax.set_xlim(0, 5.0)
+    ax.set_title("Forma de onda — sine sweep logaritmico 20 Hz → 20 kHz, 5 s")
+    ax.grid(True, alpha=0.3)
 
     fig.tight_layout()
-    path = OUTPUT_DIR / "sweep_espectrograma.png"
+    path = OUTPUT_DIR / "sweep_forma_onda.png"
     fig.savefig(path, dpi=150, bbox_inches="tight")
     plt.close(fig)
     print(f"  Guardado: {path}")
@@ -145,4 +141,5 @@ if __name__ == "__main__":
     grafico_ruido_rosa()
     grafico_sweep()
     grafico_convolucion()
-    print("\nListo. Los 3 graficos estan en docs/m1/")
+    print("\nListo. Graficos generados en docs/m1/")
+    print("  (Los espectrogramas de Audacity ya estan en la carpeta)")
