@@ -29,7 +29,7 @@ jobs:
 
       - name: Ejecutar linter (ruff)
         run: |
-          uv run ruff check src/ tests/
+          uv run ruff check app/ tests/
 
       - name: Ejecutar tests (pytest)
         run: |
