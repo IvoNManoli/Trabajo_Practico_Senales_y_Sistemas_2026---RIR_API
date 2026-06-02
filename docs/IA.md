@@ -1,56 +1,41 @@
-# Código utilizado para generar la plantilla Markdown profesional
-Este documento sirve como registro formal de las interacciones con modelos de Inteligencia Artificial para el diseño, desarrollo y refactorización del código correspondiente al 
-proyecto.
+# AI_LOG.md — Registro de uso de IA
 
----
-
-## 🛠️ Información del Proyecto y Entorno proporcionada a la IA
+## Información del Proyecto
 
 | Parámetro | Detalle |
 | :--- | :--- |
-| **Materia** | Señales y Sistemas / Procesamiento de Señales |
-| **Milestone / Entrega** | M1: Generación de Señales de Audio Básicas |
-| **Fecha de Registro** | Mayo 2026 |
-| **Modelos de IA Usados** | Gemini 1.5 Pro / GPT-4o |
-| **Entorno de Ejecución** | Python 3.12+ (Gestionado con `uv`) |
+| **Materia** | Señales y Sistemas |
+| **Universidad** | UNTREF |
+| **Proyecto** | RIR-API — API REST para cálculo de parámetros acústicos ISO 3382 |
+| **Integrantes** | Ivo Manoli, Agustín Birarelli, Gaspar Dallinge |
 
 ---
 
-## 🚀 1. M1: Generación de Ruido Blanco y Ruido Rosa
+## M1 — Generación de Señales
 
-### 📌 Test densidad espectral ruido rosa
-* **Objetivo:** Crear un test que verifique que la densidad espectral del ruido rosa generado sea correcta
+### Sesión 1 — 01/06/2026 (Claude Web)
 
-| Prompt Enviado a la IA | 
-| :--- | 
-| *Generar un test de pytest que indique que la pendiente de caída de amplitud por tercio de octava es de -3 dB* | 
+| Campo | Detalle |
+| :--- | :--- |
+| **Herramienta** | Claude (claude.ai) |
+| **Prompt resumido** | Diagnóstico del estado de M1, corrección de firma de `reproducir_y_grabar` e implementación del test de convolución sweep × filtro inverso |
+| **Resultado** | Se identificaron 4 pendientes: firma incorrecta de `reproducir_y_grabar`, falta del test de convolución, falta del tag `v0.1.0` y `ci.yml` apuntando a `src/` en lugar de `app/`. Se corrigió la firma (`num_canales` → `duracion_grabacion`) y se implementó `test_convolucion_genera_impulso` con resultado 7/7 tests en verde |
+| **Evaluación** | El diagnóstico fue preciso. El test de convolución no es solo una validación técnica: entender que sweep × filtro_inverso ≈ δ(t) es el principio fundamental detrás de la medición de RI que se usará en M2 |
 
-| Respuesta: | 
-| :--- | 
-```python
-def test_ruido_rosa_pendiente_espectral(self):
-    """Verifica la pendiente de caida de la PSD usando FFT directa."""
-    fs = 44100
-    duracion = 4.0
-    ruido = generar_ruido_rosa(duracion, fs)
-    
-    # 1. FFT real directa para obtener el espectro de potencia
-    n = len(ruido)
-    frecuencias = np.fft.rfftfreq(n, d=1/fs)
-    psd = (np.abs(np.fft.rfft(ruido)) ** 2) / (fs * n)
-    
-    # 2. Definimos nuestra propia banda de interes en audio (de 20 Hz a 15000 Hz)
-    f_min, f_max = 20, 15000
-    mascara = (frecuencias >= f_min) & (frecuencias <= f_max)
-    
-    # 3. Cambio de escala a log-log
-    log_f = np.log10(frecuencias[mascara])
-    log_psd = np.log10(psd[mascara])
-    
-    # 4. Ajuste lineal por mínimos cuadrados (Regresión lineal)
-    pendiente, _ = np.polyfit(log_f, log_psd, 1)
-    
-    # 5. Evaluacion de la ley 1/f (pendiente ideal = -1.0)
-    # Se establece una tolerancia de 0.15 debido a la naturaleza estocástica de la señal
-    assert np.isclose(pendiente, -1.0, atol=0.15), \
-        f"Pendiente espectral incorrecta: {pendiente:.2f}. Se esperaba ~ -1.0"
+---
+
+### Sesión 2 — 02/06/2026 (Claude Code en VS Code)
+
+| Campo | Detalle |
+| :--- | :--- |
+| **Herramienta** | Claude Code (claude-sonnet-4-6, extensión VS Code) |
+| **Prompt resumido** | Cierre de M1: test de `reproducir_y_grabar`, fix de CI, documentación de validación visual con gráficos |
+| **Resultado** | (1) Se agregó `TestReproducirYGrabar` con 4 tests usando `unittest.mock` (acepta 1D y 2D, duración ±1%, RuntimeError sin device). (2) Se corrigió `ci.yml`: `ruff check src/` → `ruff check app/`. (3) Se creó `generar_graficos.py` que produce PSD del ruido rosa (Welch), forma de onda del sweep y gráfico de convolución. (4) Se creó `validacion_m1.md` documentando cada gráfico con su fundamento teórico, incorporando también espectrogramas generados con Audacity. (5) Se subieron las consignas M0–M3 a `feature/documentacion`. 11/11 tests en verde |
+| **Evaluación** | Claude Code en VS Code permite trabajar directamente sobre el repositorio sin necesidad de exportar contexto manualmente. El uso de `unittest.mock` para simular el dispositivo de audio fue clave para que los tests de `reproducir_y_grabar` corran en CI sin hardware real. Los espectrogramas de Audacity complementan bien los gráficos programáticos |
+
+---
+
+## Pendiente para próximas sesiones
+
+- Crear tag `v0.1.0` y hacer PR a main
+- Iniciar M2 (vence 16/06): `cargar_audio`, `a_escala_log`, `obtener_ri_desde_sweep`, `sintetizar_ri`, `filtro_octava`
