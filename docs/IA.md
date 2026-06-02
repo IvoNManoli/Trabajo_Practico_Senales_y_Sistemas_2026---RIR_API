@@ -13,56 +13,29 @@
 
 ## M1 — Generación de Señales
 
-### Entrada 1 — Contexto permanente para IA en el proyecto
+### Sesión 1 — 01/06/2026 (Claude Web)
 
 | Campo | Detalle |
 | :--- | :--- |
-| **Fecha** | 01/06/2026 |
 | **Herramienta** | Claude (claude.ai) |
-| **Prompt resumido** | Se pidió armar un archivo de instrucciones para dar contexto permanente del proyecto a herramientas de IA |
-| **Resultado** | Se creó `.github/copilot-instructions.md` con stack tecnológico, arquitectura de 3 capas, funciones requeridas por M1 y reglas de código |
-| **Evaluación** | Útil para no repetir contexto en cada sesión. Se aprendió que mantener un archivo de contexto actualizado ahorra tiempo y mejora la calidad de las respuestas de la IA |
+| **Prompt resumido** | Diagnóstico del estado de M1, corrección de firma de `reproducir_y_grabar` e implementación del test de convolución sweep × filtro inverso |
+| **Resultado** | Se identificaron 4 pendientes: firma incorrecta de `reproducir_y_grabar`, falta del test de convolución, falta del tag `v0.1.0` y `ci.yml` apuntando a `src/` en lugar de `app/`. Se corrigió la firma (`num_canales` → `duracion_grabacion`) y se implementó `test_convolucion_genera_impulso` con resultado 7/7 tests en verde |
+| **Evaluación** | El diagnóstico fue preciso. El test de convolución no es solo una validación técnica: entender que sweep × filtro_inverso ≈ δ(t) es el principio fundamental detrás de la medición de RI que se usará en M2 |
 
 ---
 
-### Entrada 2 — Diagnóstico del estado de M1
+### Sesión 2 — 02/06/2026 (Claude Code en VS Code)
 
 | Campo | Detalle |
 | :--- | :--- |
-| **Fecha** | 01/06/2026 |
-| **Herramienta** | Claude (claude.ai) |
-| **Prompt resumido** | Se compartió el contenido completo del repositorio y se pidió identificar qué faltaba para completar M1 |
-| **Resultado** | Se identificaron 4 problemas: (1) firma incorrecta de `reproducir_y_grabar`, (2) falta del test de convolución sweep × filtro_inverso, (3) falta del tag `v0.1.0`, (4) `ci.yml` apuntando a `src/` en lugar de `app/` |
-| **Evaluación** | Diagnóstico preciso y útil. Se modificó el plan de trabajo en base a estos hallazgos. Se aprendió a usar PowerShell para exportar el contenido del repositorio como contexto para la IA |
-
----
-
-### Entrada 3 — Corrección de firma de `reproducir_y_grabar`
-
-| Campo | Detalle |
-| :--- | :--- |
-| **Fecha** | 01/06/2026 |
-| **Herramienta** | Claude (claude.ai) |
-| **Prompt resumido** | Pedir corrección de la firma de `reproducir_y_grabar` para recibir `duracion_grabacion` en lugar de `num_canales`, con manejo de error si no hay dispositivo de audio |
-| **Resultado** | Se reemplazó `num_canales: int` por `duracion_grabacion: float`. Se agregó `try/except` que lanza `RuntimeError` si no hay dispositivo disponible. Se renombró el archivo de `grabacion.py` a `grabacion_utils.py` a sugerencia del docente |
-| **Evaluación** | El cambio fue correcto y necesario — la firma anterior no coincidía con la especificación de M1. El parámetro `duracion_grabacion` tiene sentido físico real: permite capturar la cola de reverberación después de que termina la señal de excitación. Se verificó con `uv run python -c "from app.services.grabacion_utils import reproducir_y_grabar; print('OK')"` |
-
----
-
-### Entrada 4 — Test de convolución sweep × filtro_inverso
-
-| Campo | Detalle |
-| :--- | :--- |
-| **Fecha** | 01/06/2026 |
-| **Herramienta** | Claude (claude.ai) |
-| **Prompt resumido** | Pedir implementación del test que verifica que sweep × filtro_inverso produce un impulso con pico > 40 dB sobre el piso de ruido |
-| **Resultado** | Se implementó `test_convolucion_genera_impulso` en `TestGenerarSineSweep`. Usa `fftconvolve`, encuentra el pico, calcula el piso excluyendo 100 muestras vecinas, y verifica la relación en dB. Resultado: 7/7 tests en verde |
-| **Evaluación** | Antes de aceptar el código se entendió el concepto: la convolución del sweep con su filtro inverso debe aproximarse a un delta de Dirac. Esto no es solo un test — es el principio fundamental detrás de la medición de respuestas al impulso que se va a usar en M2 |
+| **Herramienta** | Claude Code (claude-sonnet-4-6, extensión VS Code) |
+| **Prompt resumido** | Cierre de M1: test de `reproducir_y_grabar`, fix de CI, documentación de validación visual con gráficos |
+| **Resultado** | (1) Se agregó `TestReproducirYGrabar` con 4 tests usando `unittest.mock` (acepta 1D y 2D, duración ±1%, RuntimeError sin device). (2) Se corrigió `ci.yml`: `ruff check src/` → `ruff check app/`. (3) Se creó `generar_graficos.py` que produce PSD del ruido rosa (Welch), forma de onda del sweep y gráfico de convolución. (4) Se creó `validacion_m1.md` documentando cada gráfico con su fundamento teórico, incorporando también espectrogramas generados con Audacity. (5) Se subieron las consignas M0–M3 a `feature/documentacion`. 11/11 tests en verde |
+| **Evaluación** | Claude Code en VS Code permite trabajar directamente sobre el repositorio sin necesidad de exportar contexto manualmente. El uso de `unittest.mock` para simular el dispositivo de audio fue clave para que los tests de `reproducir_y_grabar` corran en CI sin hardware real. Los espectrogramas de Audacity complementan bien los gráficos programáticos |
 
 ---
 
 ## Pendiente para próximas sesiones
 
-- Corregir `ci.yml`: cambiar `src/` por `app/` en el paso de ruff
-- Crear tag `v0.1.0` para entrega oficial de M1
-- Iniciar M2: filtros de banda de octava y deconvolución
+- Crear tag `v0.1.0` y hacer PR a main
+- Iniciar M2 (vence 16/06): `cargar_audio`, `a_escala_log`, `obtener_ri_desde_sweep`, `sintetizar_ri`, `filtro_octava`
