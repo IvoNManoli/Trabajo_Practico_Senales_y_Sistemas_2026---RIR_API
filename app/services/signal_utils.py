@@ -47,10 +47,19 @@ def sintetizar_ri(
 ) -> np.ndarray:
     """Sintetiza una respuesta al impulso artificial a partir de valores T60 por banda.
 
+    Modela la RI como ruido blanco filtrado en cada banda de octava multiplicado
+    por una envolvente exponencial con decaimiento segun el T60 especificado:
+
+        h(t) = sum_banda [ filtro_octava(ruido(t)) * exp(-alpha * t) ]
+
+    donde alpha = 6.908 / T60 se deriva de la definicion de T60 como el tiempo
+    en que la energia decae 60 dB.
+
     Parameters
     ----------
     t60_por_banda : dict[float, float]
         Diccionario {frecuencia_central_Hz: T60_segundos}.
+        Ejemplo: {125: 2.0, 500: 1.5, 1000: 1.2, 4000: 0.8}
     fs : int
         Frecuencia de muestreo en Hz.
     duracion : float
@@ -59,9 +68,22 @@ def sintetizar_ri(
     Returns
     -------
     np.ndarray
-        Respuesta al impulso sintetizada (array 1D).
+        Respuesta al impulso sintetizada (array 1D), normalizada.
     """
-    raise NotImplementedError("Implementar en Milestone 2")
+    from app.services.filter import filtro_octava
+
+    n = int(duracion * fs)
+    t = np.arange(n) / fs
+    ri = np.zeros(n)
+    for fc, t60 in t60_por_banda.items():
+        alpha = 6.908 / t60
+        ruido = np.random.randn(n)
+        banda = filtro_octava(ruido, fc=float(fc), fs=fs)
+        ri += banda * np.exp(-alpha * t)
+    max_val = np.max(np.abs(ri))
+    if max_val > 0:
+        ri = ri / max_val * 0.9
+    return ri
 
 
 def obtener_ri_desde_sweep(
