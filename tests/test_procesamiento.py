@@ -7,7 +7,8 @@ import numpy as np
 import pytest
 import soundfile as sf
 
-from app.services.signal_utils import a_escala_log, cargar_audio
+from app.services.filter import filtro_octava
+from app.services.signal_utils import a_escala_log, cargar_audio, sintetizar_ri
 
 
 class TestCargarAudio:
@@ -81,3 +82,38 @@ class TestAEscalaLog:
         x = np.array([1.0, 0.5])
         db = a_escala_log(x)
         assert abs(db[1] - (-6.0206)) < 0.01
+
+
+class TestSintetizarRI:
+    """Tests para la funcion sintetizar_ri."""
+
+    def test_sintetizar_ri_duracion(self):
+        """Verificar que la RI tiene la duracion correcta."""
+        fs = 44100
+        duracion = 2.0
+        ri = sintetizar_ri({1000.0: 1.5}, fs=fs, duracion=duracion)
+        assert len(ri) == int(duracion * fs)
+
+    def test_sintetizar_ri_decaimiento(self):
+        """
+        Verificar que el decaimiento por banda corresponde
+        aproximadamente al T60 especificado.
+        """
+        np.random.seed(42)
+        fs = 44100
+        t60_objetivo = 2.0
+        # duracion > T60 para que la senal decaiga lo suficiente
+        ri = sintetizar_ri({1000.0: t60_objetivo}, fs=fs, duracion=3.0)
+        ri_banda = filtro_octava(ri, fc=1000.0, fs=fs)
+
+        # Integral de Schroeder: suma acumulada inversa de la energia
+        energia = ri_banda ** 2
+        schroeder = np.cumsum(energia[::-1])[::-1]
+        schroeder_db = 10 * np.log10(schroeder / schroeder[0] + np.finfo(float).eps)
+
+        t = np.arange(len(ri)) / fs
+        indices_60db = np.where(schroeder_db <= -60)[0]
+        assert len(indices_60db) > 0, "La senal no decayo 60 dB en la duracion especificada"
+
+        t60_medido = t[indices_60db[0]]
+        assert abs(t60_medido - t60_objetivo) / t60_objetivo <= 0.10
