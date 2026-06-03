@@ -3,21 +3,25 @@
 Milestone 2: Procesamiento de la respuesta al impulso.
 """
 
+from pathlib import Path
+
 import numpy as np
+import soundfile as sf
 
 
-def cargar_audio(ruta: str) -> tuple[np.ndarray, int]:
+def cargar_audio(ruta: str | Path) -> tuple[np.ndarray, int]:
     """Carga un archivo de audio y retorna la senal y la frecuencia de muestreo.
 
     Parameters
     ----------
-    ruta : str
-        Ruta al archivo de audio a cargar.
+    ruta : str | Path
+        Ruta al archivo de audio a cargar. Soporta WAV y FLAC.
 
     Returns
     -------
     signal : np.ndarray
-        Senal de audio como array 1D (mono).
+        Senal de audio como float64 normalizada entre -1 y 1.
+        Si el audio es estereo, shape es (n_muestras, n_canales).
     fs : int
         Frecuencia de muestreo del archivo en Hz.
 
@@ -25,8 +29,17 @@ def cargar_audio(ruta: str) -> tuple[np.ndarray, int]:
     ------
     FileNotFoundError
         Si el archivo especificado no existe.
+    ValueError
+        Si el formato no es soportado o el archivo no puede leerse.
     """
-    raise NotImplementedError("Implementar en Milestone 2")
+    ruta = Path(ruta)
+    if not ruta.exists():
+        raise FileNotFoundError(f"Archivo no encontrado: {ruta}")
+    try:
+        audio, fs = sf.read(str(ruta), dtype="float64", always_2d=False)
+    except Exception as exc:
+        raise ValueError(f"No se pudo leer el archivo: {ruta}") from exc
+    return audio, int(fs)
 
 
 def sintetizar_ri(
