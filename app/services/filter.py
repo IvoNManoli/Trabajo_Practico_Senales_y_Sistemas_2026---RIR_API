@@ -4,6 +4,7 @@ Milestone 2: Procesamiento de la respuesta al impulso.
 """
 
 import numpy as np
+from scipy.signal import butter, filtfilt
 
 
 def filtro_octava(
@@ -11,10 +12,13 @@ def filtro_octava(
 ) -> np.ndarray:
     """Aplica un filtro pasabanda de una octava centrado en ``fc``.
 
-    Implementa un filtro Butterworth pasabanda cuyas frecuencias de corte
-    corresponden a los limites de una banda de octava segun IEC 61260:
-    - Frecuencia inferior: ``fc / sqrt(2)``
-    - Frecuencia superior: ``fc * sqrt(2)``
+    Frecuencias de corte segun IEC 61260:
+
+        f_inf = fc / sqrt(2)
+        f_sup = fc * sqrt(2)
+
+    Usa ``filtfilt`` (fase cero) para evitar distorsion de fase, lo cual es
+    critico para el calculo correcto de parametros temporales como EDT y T60.
 
     Parameters
     ----------
@@ -32,4 +36,10 @@ def filtro_octava(
     np.ndarray
         Senal filtrada (array 1D).
     """
-    raise NotImplementedError("Implementar en Milestone 2")
+    f_inf = fc / np.sqrt(2)
+    f_sup = fc * np.sqrt(2)
+    nyq = fs / 2.0
+    # f_sup puede superar Nyquist en bandas altas (ej. 16 kHz a 44.1 kHz fs)
+    wn = [f_inf / nyq, min(f_sup / nyq, 0.9999)]
+    b, a = butter(orden, wn, btype="band")
+    return filtfilt(b, a, signal)
