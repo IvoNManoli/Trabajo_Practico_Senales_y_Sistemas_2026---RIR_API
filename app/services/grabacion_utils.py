@@ -34,9 +34,18 @@ def reproducir_y_grabar(
     RuntimeError
         Si no hay dispositivo de audio disponible.
     """
+    n_grabacion = int(duracion_grabacion * fs)
+    n_senal = signal.shape[0]
+    n_padding = max(0, n_grabacion - n_senal)
+
+    if signal.ndim == 1:
+        senal_extendida = np.concatenate([signal, np.zeros(n_padding)])
+    else:
+        senal_extendida = np.vstack([signal, np.zeros((n_padding, signal.shape[1]))])
+
     try:
         datos_capturados = sd.playrec(
-            signal,
+            senal_extendida,
             samplerate=fs,
             channels=1,
             blocking=True
