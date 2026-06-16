@@ -7,7 +7,7 @@
 | **Materia** | Señales y Sistemas |
 | **Universidad** | UNTREF |
 | **Proyecto** | RIR-API — API REST para cálculo de parámetros acústicos ISO 3382 |
-| **Integrantes** | Ivo Manoli, Agustín Birarelli, Gaspar Dallinge |
+| **Integrantes** | Ivo Manoli, Gaspar Dallinge |
 
 ---
 

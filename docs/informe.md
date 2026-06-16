@@ -3,7 +3,6 @@
 
 **Integrantes:**
 - Ivo Manoli (legajo 64189) — procesamiento de RI
-- Agustín Birarelli (legajo 69574) — generación de señales
 - Gaspar Dallinge (legajo 62751) — testing/CI y documentación
 
 ---

@@ -9,7 +9,7 @@ Materia: Señales y Sistemas, carrera Ingeniería de Sonido, UNTREF.
 
 **Integrantes y roles:**
 - Ivo Manoli (legajo 64189) — procesamiento de RI → rama `feature/procesamiento-de-RI`
-- Agustín Birarelli (legajo 69574) — generación de señales → rama `feature/generacion-de-senales`
+- Ivo Manoli (legajo 64189) — generación de señales → rama `feature/generacion-de-senales`
 - Gaspar Dallinge (legajo 62751) — testing/CI y documentación
 
 ## Estado actual
