@@ -1,4 +1,4 @@
-# RIR-API · Señales y Sistemas · UNTREF
+﻿# RIR-API · Señales y Sistemas · UNTREF
 
 Contexto para Claude Code. Leer antes de tocar cualquier archivo.
 
@@ -15,18 +15,8 @@ Materia: Señales y Sistemas, carrera Ingeniería de Sonido, UNTREF.
 ## Estado actual
 
 - **M1 (Generación):** completo. Tag `v0.1.0` en main.
-- **M2 (Procesamiento):** implementado, con tests y PRs mergeados en main. Pendiente el tag hasta confirmar que no hay correcciones.
+- **M2 (Procesamiento):** completo. Tag `v0.2.0` en main.
 - **M3 (Producto final):** pendiente. Vence 7 de julio de 2026.
-
-## Pendiente para cerrar M2
-
-Una vez confirmado que no hay correcciones, crear el tag en main:
-
-```bash
-git checkout main && git pull origin main
-git tag -a v0.2.0 -m "M2: procesamiento de RI"
-git push origin v0.2.0
-```
 
 ## M2 — ya implementado
 
