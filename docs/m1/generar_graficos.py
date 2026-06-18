@@ -140,7 +140,7 @@ def grafico_convolucion():
     ax1.plot(t_total, resultado, lw=0.5, color="steelblue")
     ax1.set_xlabel("Tiempo (s)")
     ax1.set_ylabel("Amplitud")
-    ax1.set_title(f"sweep × filtro_inverso — SNR pico/piso ≈ {snr_db:.1f} dB")
+    ax1.set_title(f"sweep * filtro_inverso — SNR pico/piso ≈ {snr_db:.1f} dB")
     fig1.tight_layout()
     path1 = OUTPUT_DIR / "convolucion_completa.png"
     fig1.savefig(path1, dpi=150, bbox_inches="tight")
