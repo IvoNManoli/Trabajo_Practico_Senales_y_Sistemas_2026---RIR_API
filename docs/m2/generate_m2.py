@@ -16,7 +16,7 @@ import soundfile as sf
 
 from app.services.signal_utils import a_escala_log, cargar_audio, sintetizar_ri
 
-BANDAS = [125, 250, 250, 1000, 2000, 4000]
+BANDAS = [125, 250, 500, 1000, 2000, 4000]
 FS_REF = 44100
 
 # =========================
@@ -24,9 +24,11 @@ FS_REF = 44100
 # =========================
 out_elv = os.path.join(SCRIPT_DIR, "elveden_hall")
 out_mae = os.path.join(SCRIPT_DIR, "maes_howe")
+out_img = os.path.join(SCRIPT_DIR, "imagenes")
 
 os.makedirs(out_elv, exist_ok=True)
 os.makedirs(out_mae, exist_ok=True)
+os.makedirs(out_img, exist_ok=True)
 
 
 # =========================
@@ -60,7 +62,7 @@ plt.xlabel("Tiempo [s]")
 plt.ylabel("Amplitud")
 plt.grid()
 
-out_file = os.path.join(out_elv, "ir.png")
+out_file = os.path.join(out_img, "elveden_hall_ir.png")
 plt.savefig(out_file, dpi=150)
 plt.close()
 print("OK Guardado:", out_file)
@@ -78,7 +80,7 @@ plt.xlabel("Tiempo [s]")
 plt.ylabel("Amplitud")
 plt.grid()
 
-out_file = os.path.join(out_mae, "ir.png")
+out_file = os.path.join(out_img, "maes_howe_ir.png")
 plt.savefig(out_file, dpi=150)
 plt.close()
 print("OK Guardado:", out_file)
@@ -111,7 +113,7 @@ ax.legend(loc="lower right")
 ax.grid(True, which="both", alpha=0.3)
 plt.tight_layout()
 
-out_file = os.path.join(SCRIPT_DIR, "respuesta_filtros.png")
+out_file = os.path.join(out_img, "respuesta_filtros.png")
 plt.savefig(out_file, dpi=150)
 plt.close()
 print("OK Guardado:", out_file)
@@ -154,7 +156,7 @@ else:
     plt.xlim(-MARGEN_MS, 250 - MARGEN_MS)
     plt.grid(alpha=0.3)
     plt.tight_layout()
-    out_file = os.path.join(SCRIPT_DIR, "ri_medida_completa.png")
+    out_file = os.path.join(out_img, "ri_medida_completa.png")
     plt.savefig(out_file, dpi=150)
     plt.close()
     print("OK Guardado:", out_file)
@@ -174,7 +176,7 @@ else:
     plt.legend(loc="upper right")
     plt.grid(alpha=0.3)
     plt.tight_layout()
-    out_file = os.path.join(SCRIPT_DIR, "ri_medida_completa_onset.png")
+    out_file = os.path.join(out_img, "ri_medida_completa_onset.png")
     plt.savefig(out_file, dpi=150)
     plt.close()
     print("OK Guardado:", out_file)
@@ -212,7 +214,7 @@ else:
     ax.set_title("Estimación del piso de ruido en la convolución completa")
     ax.grid(alpha=0.3)
     fig.tight_layout()
-    out_file = os.path.join(SCRIPT_DIR, "ri_medida_piso_ruido.png")
+    out_file = os.path.join(out_img, "ri_medida_piso_ruido.png")
     fig.savefig(out_file, dpi=150)
     plt.close(fig)
     print("OK Guardado:", out_file)
@@ -228,7 +230,7 @@ else:
     plt.xlim(0, 250)
     plt.grid(alpha=0.3)
     plt.tight_layout()
-    out_file = os.path.join(SCRIPT_DIR, "ri_medida_procesada.png")
+    out_file = os.path.join(out_img, "ri_medida_procesada.png")
     plt.savefig(out_file, dpi=150)
     plt.close()
     print("OK Guardado:", out_file)
