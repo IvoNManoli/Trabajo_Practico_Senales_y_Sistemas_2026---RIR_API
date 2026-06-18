@@ -127,7 +127,7 @@ S --> Matplotlib[Matplotlib]        # Gráficos
 
 - feature/generacion-de-señales:
   Esta rama es responsable de la generación de señales de excitación para la respuesta al impulso (RIR).
-  Responsable: Agustín Birarelli
+  Responsable: Ivo Manoli
 
 - feature/procesamiento-de-RI:  
   Esta rama es responsable del procesamiento de las respuestas al impulso (RI) para obtener los parámetros acústicos necesarios según la norma ISO 3382.
