@@ -93,13 +93,15 @@ invirtiendo temporalmente la señal y aplicando una envolvente de corrección:
 
 $$x_{\text{inv}}(t) = \frac{x(T - t)}{A(t)}, \quad A(t) = e^{-t \ln(f_2/f_1)/T}$$
 
-![Convolución sweep × filtro inverso](imagenes/convolucion_impulso.png)
+![Convolución sweep × filtro inverso — vista completa](imagenes/convolucion_completa.png)
 
-**Panel izquierdo:** toda la energía de la señal resultante está concentrada en un único
-instante (t = 5 s), con el resto de la señal prácticamente en cero.
+Toda la energía de la señal resultante está concentrada en un único instante (t = 5 s),
+con el resto de la señal prácticamente en cero.
 
-**Panel derecho (zoom ±5 ms):** el resultado es un pulso estrecho con lóbulos laterales
-mínimos — la aproximación práctica al impulso ideal δ(t).
+![Convolución sweep × filtro inverso — zoom ±5 ms](imagenes/convolucion_zoom.png)
+
+El resultado es un pulso estrecho con lóbulos laterales mínimos — la aproximación
+práctica al impulso ideal δ(t).
 
 La relación señal a ruido pico/piso medida es de **≈ 101.7 dB**, muy por encima del
 umbral mínimo de 40 dB que exige el test automatizado. Esto garantiza que la

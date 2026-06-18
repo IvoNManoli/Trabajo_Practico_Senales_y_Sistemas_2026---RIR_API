@@ -89,28 +89,32 @@ print("OK Guardado:", out_file)
 # =========================
 # RESPUESTA EN FRECUENCIA — filtro_octava (IEC 61260)
 # =========================
+BANDAS_PLOT = [125, 250, 500, 1000, 2000, 4000, 8000, 16000]
+FS_PLOT = 96000
+
 fig, ax = plt.subplots(figsize=(10, 5))
 
-for fc in BANDAS:
+for fc in BANDAS_PLOT:
     f_inf = fc / np.sqrt(2)
     f_sup = fc * np.sqrt(2)
-    w_inf = 2 * f_inf / FS_REF
-    w_sup = 2 * f_sup / FS_REF
+    nyq = FS_PLOT / 2.0
+    w_inf = f_inf / nyq
+    w_sup = min(f_sup / nyq, 0.9999)
     sos = butter(4, [w_inf, w_sup], btype="band", output="sos")
-    w, h = sosfreqz(sos, worN=8192, fs=FS_REF)
+    w, h = sosfreqz(sos, worN=8192, fs=FS_PLOT)
     mag_db = 20 * np.log10(np.maximum(np.abs(h), 1e-10))
     ax.semilogx(w, mag_db, label=f"{fc} Hz")
-    ax.axvline(f_inf, color="gray", linestyle=":", linewidth=0.6, alpha=0.5)
-    ax.axvline(f_sup, color="gray", linestyle=":", linewidth=0.6, alpha=0.5)
 
 ax.axhline(-3, color="black", linestyle="--", linewidth=0.8, label="-3 dB")
-ax.set_xlim(50, 12000)
+ax.set_xlim(50, 24000)
 ax.set_ylim(-80, 5)
 ax.set_xlabel("Frecuencia [Hz]")
 ax.set_ylabel("Ganancia [dB]")
 ax.set_title("Respuesta en frecuencia — filtros de banda de octava (IEC 61260, orden 4)")
 ax.legend(loc="lower right")
-ax.grid(True, which="both", alpha=0.3)
+ax.set_xticks(BANDAS_PLOT)
+ax.set_xticklabels([str(fc) for fc in BANDAS_PLOT])
+ax.grid(True, which="major", alpha=0.3)
 plt.tight_layout()
 
 out_file = os.path.join(out_img, "respuesta_filtros.png")
