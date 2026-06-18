@@ -3,6 +3,7 @@ import sys
 
 import matplotlib.pyplot as plt
 import numpy as np
+from scipy.signal import hilbert
 
 # =========================
 # FIX PATH (ROOT DEL PROYECTO)
@@ -71,7 +72,7 @@ print("OK Guardado:", out_file)
 
 # Decaimiento logaritmico
 plt.figure(figsize=(10, 4))
-plt.plot(t_e, a_escala_log(ri_e))
+plt.plot(t_e, a_escala_log(np.abs(hilbert(ri_e))))
 plt.title("Elveden Hall - Decaimiento logaritmico")
 plt.xlabel("Tiempo [s]")
 plt.ylabel("Amplitud [dB]")
@@ -88,7 +89,7 @@ print("OK Guardado:", out_file)
 plt.figure(figsize=(10, 5))
 for fc in BANDAS:
     banda = filtro_octava(ri_e, fc=float(fc), fs=fs_e)
-    plt.plot(t_e, a_escala_log(banda), label=f"{fc} Hz")
+    plt.plot(t_e, a_escala_log(np.abs(hilbert(banda))), label=f"{fc} Hz")
 plt.title("Elveden Hall - Decaimiento por banda de octava")
 plt.xlabel("Tiempo [s]")
 plt.ylabel("Amplitud [dB]")
@@ -121,7 +122,7 @@ print("OK Guardado:", out_file)
 
 # Decaimiento logaritmico
 plt.figure(figsize=(10, 4))
-plt.plot(t_m, a_escala_log(ri_m))
+plt.plot(t_m, a_escala_log(np.abs(hilbert(ri_m))))
 plt.title("Maes Howe - Decaimiento logaritmico")
 plt.xlabel("Tiempo [s]")
 plt.ylabel("Amplitud [dB]")
@@ -138,7 +139,7 @@ print("OK Guardado:", out_file)
 plt.figure(figsize=(10, 5))
 for fc in BANDAS:
     banda = filtro_octava(ri_m, fc=float(fc), fs=fs_m)
-    plt.plot(t_m, a_escala_log(banda), label=f"{fc} Hz")
+    plt.plot(t_m, a_escala_log(np.abs(hilbert(banda))), label=f"{fc} Hz")
 plt.title("Maes Howe - Decaimiento por banda de octava")
 plt.xlabel("Tiempo [s]")
 plt.ylabel("Amplitud [dB]")
