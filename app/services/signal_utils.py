@@ -40,6 +40,8 @@ def cargar_audio(ruta: str | Path) -> tuple[np.ndarray, int]:
         audio, fs = sf.read(str(ruta), dtype="float64", always_2d=False)
     except Exception as exc:
         raise ValueError(f"No se pudo leer el archivo: {ruta}") from exc
+    if np.max(np.abs(audio)) > 0:
+        audio = audio / np.max(np.abs(audio)) * 0.9
     return audio, int(fs)
 
 

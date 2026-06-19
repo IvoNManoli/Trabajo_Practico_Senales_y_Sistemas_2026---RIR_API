@@ -37,7 +37,8 @@ class TestCargarAudio:
             assert isinstance(audio, np.ndarray)
             assert fs == 44100
             assert audio.shape == senal_orig.shape
-            np.testing.assert_allclose(audio, senal_orig, atol=1e-5)
+            senal_esperada = senal_orig / np.max(np.abs(senal_orig)) * 0.9
+            np.testing.assert_allclose(audio, senal_esperada, atol=1e-5)
         finally:
             os.unlink(ruta)
 
