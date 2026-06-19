@@ -64,3 +64,6 @@ Thumbs.db
 
 # Datos de medicion
 data/
+
+# Volcados de archivos locales
+output.txt

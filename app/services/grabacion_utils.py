@@ -53,4 +53,5 @@ def reproducir_y_grabar(
         sd.wait()
         return datos_capturados.ravel()
     except sd.PortAudioError as e:
-        raise RuntimeError(f"No hay dispositivo de audio disponible: {e}")
+        raise RuntimeError(f"No hay dispositivo de audio disponible: {e}") from e
+
