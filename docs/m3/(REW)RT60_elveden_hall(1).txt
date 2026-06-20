@@ -1,0 +1,23 @@
+RT60 data saved by REW V5.20.13
+Source: C:\Users\gaspi\OneDrive\Desktop\Trabajo_Practico_Senales_y_Sistemas_2026---RIR_API\docs\m2\elveden_hall\elveden_hall.wav
+Dated: 03/10/2013 17:37:38
+Measurement: elveden_hall
+Sweep level: -12,0 dBFS
+Response measured over: 0,1 to 22.050,0 Hz
+Peak value: 0.6303268 at index 85125
+Response length: 524288 samples
+Sample interval: 2.2675736961451248E-5 seconds
+Start time: -1.9302721088435375 seconds
+
+Format is freq (Hz), BW (octaves), EDT (s), r, T20 (s), r, T30 (s), r, Topt (s), r, ToptStart (dB), ToptEnd (dB), T60M (s), reverse/forward/zero phase filtered, C50 (dB), C80 (dB), D50 (%), TS (s)
+
+Octave filtered data
+63 1/1 0.925 -0.811 2.359 -0.994 2.173 -0.996 2.380 -0.996 -9.000 -28.000 0.000 Zero Phase 9.55 9.44 90.0 0.032
+125 1/1 2.318 -0.990 2.788 -0.998 2.814 -0.999 2.856 -1.000 -5.000 -44.000 0.000 Zero Phase -2.92 -0.89 33.8 0.162
+250 1/1 3.237 -0.996 3.518 -0.999 3.547 -1.000 3.560 -1.000 -5.000 -39.000 0.000 Zero Phase -8.66 -5.50 12.0 0.259
+500 1/1 4.196 -0.999 4.290 -1.000 4.301 -1.000 4.272 -1.000 -5.000 -55.000 0.000 Zero Phase -8.03 -5.22 13.6 0.301
+1000 1/1 4.012 -0.999 4.171 -1.000 4.161 -1.000 4.122 -1.000 -5.000 -56.000 0.000 Zero Phase -8.90 -6.27 11.4 0.305
+2000 1/1 3.628 -1.000 3.941 -1.000 3.937 -1.000 3.934 -1.000 -5.000 -38.000 0.000 Zero Phase -7.88 -5.27 14.0 0.275
+4000 1/1 2.683 -1.000 2.936 -1.000 3.012 -1.000 2.887 -1.000 -5.000 -21.000 0.000 Zero Phase -4.93 -2.59 24.3 0.191
+8000 1/1 1.447 -1.000 1.676 -0.999 1.751 -0.999 1.704 -1.000 -5.000 -30.000 0.000 Zero Phase -2.57 0.23 35.6 0.108
+
