@@ -4,7 +4,7 @@ Milestone 2: Procesamiento de la respuesta al impulso.
 """
 
 import numpy as np
-from scipy.signal import butter, filtfilt
+from scipy.signal import butter, sosfiltfilt
 
 
 def filtro_octava(
@@ -17,8 +17,9 @@ def filtro_octava(
         f_inf = fc / sqrt(2)
         f_sup = fc * sqrt(2)
 
-    Usa ``filtfilt`` (fase cero) para evitar distorsion de fase, lo cual es
-    critico para el calculo correcto de parametros temporales como EDT y T60.
+    Usa ``sosfiltfilt`` (fase cero, forma SOS) para evitar distorsion de fase
+    y garantizar estabilidad numerica en bandas de baja frecuencia relativa,
+    lo cual es critico para el calculo correcto de parametros temporales como EDT y T60.
 
     Parameters
     ----------
@@ -41,5 +42,6 @@ def filtro_octava(
     nyq = fs / 2.0
     # f_sup puede superar Nyquist en bandas altas (ej. 16 kHz a 44.1 kHz fs)
     wn = [f_inf / nyq, min(f_sup / nyq, 0.9999)]
-    b, a = butter(orden, wn, btype="band")
-    return filtfilt(b, a, signal)
+    # output='sos' evita inestabilidad numerica en bandas de baja frecuencia relativa
+    sos = butter(orden, wn, btype="band", output="sos")
+    return sosfiltfilt(sos, signal)
