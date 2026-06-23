@@ -57,6 +57,6 @@ async def generar_ri_sintetica_endpoint(req: SyntheticIRRequest) -> StreamingRes
         raise HTTPException(
             status_code=400,
             detail=f"Las claves de t60_por_banda deben ser frecuencias numericas: {e}",
-        )
+        ) from e
     ri = sintetizar_ri(t60_por_banda, req.fs, req.duracion)
     return _wav_response(ri, req.fs, "synthetic_ir.wav")

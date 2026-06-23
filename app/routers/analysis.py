@@ -23,7 +23,7 @@ _BANDAS: list[float] = [125.0, 250.0, 500.0, 1000.0, 2000.0, 4000.0]
 
 @router.post("/impulse-response", summary="Analisis completo de una respuesta al impulso")
 async def analizar_ri(
-    file: UploadFile = File(..., description="Archivo WAV con la respuesta al impulso"),
+    file: UploadFile = File(..., description="Archivo WAV con la respuesta al impulso"),  # noqa: B008
 ) -> dict:
     """Analiza una RI y devuelve parametros ISO 3382 mas curvas de Schroeder por banda.
 
@@ -38,7 +38,9 @@ async def analizar_ri(
             ri = ri[:, 0]
         fs = int(fs)
     except Exception as e:
-        raise HTTPException(status_code=422, detail=f"No se pudo leer el archivo de audio: {e}")
+        raise HTTPException(
+            status_code=422, detail=f"No se pudo leer el archivo de audio: {e}"
+        ) from e
 
     if len(ri) < int(fs * 0.1):
         raise HTTPException(status_code=400, detail="La RI es demasiado corta (minimo 0.1 s)")
@@ -46,7 +48,7 @@ async def analizar_ri(
     try:
         parametros = calcular_parametros_acusticos(ri, fs)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error al calcular parametros: {e}")
+        raise HTTPException(status_code=500, detail=f"Error al calcular parametros: {e}") from e
 
     schroeder_por_banda: dict = {}
     for fc in _BANDAS:

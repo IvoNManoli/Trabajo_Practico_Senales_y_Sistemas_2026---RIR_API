@@ -28,12 +28,14 @@ async def _leer_audio(file: UploadFile) -> tuple:
             signal = signal[:, 0]
         return signal, int(fs)
     except Exception as e:
-        raise HTTPException(status_code=422, detail=f"No se pudo leer el archivo de audio: {e}")
+        raise HTTPException(
+            status_code=422, detail=f"No se pudo leer el archivo de audio: {e}"
+        ) from e
 
 
 @router.post("/schroeder", summary="Integral de Schroeder de una RI")
 async def calcular_schroeder(
-    file: UploadFile = File(..., description="Archivo WAV con la respuesta al impulso"),
+    file: UploadFile = File(..., description="Archivo WAV con la respuesta al impulso"),  # noqa: B008
 ) -> dict:
     """Calcula la curva de decaimiento energetico (EDC / integral de Schroeder) en dB."""
     ri, fs = await _leer_audio(file)
@@ -48,7 +50,7 @@ async def calcular_schroeder(
 
 @router.post("/smoothing", summary="Suavizado de senal")
 async def suavizar(
-    file: UploadFile = File(..., description="Archivo WAV de entrada"),
+    file: UploadFile = File(..., description="Archivo WAV de entrada"),  # noqa: B008
     metodo: str = Form(
         default="hilbert",
         description="Metodo de suavizado: 'hilbert' o entero (tamano de ventana en muestras)",
@@ -62,7 +64,7 @@ async def suavizar(
         raise HTTPException(
             status_code=400,
             detail="El metodo debe ser 'hilbert' o un entero (tamano de ventana)",
-        )
+        ) from None
     envolvente = suavizar_signal(signal, ventana)
     t = np.arange(len(envolvente)) / fs
     return {
@@ -74,7 +76,7 @@ async def suavizar(
 
 @router.post("/log-scale", summary="Conversion a escala logaritmica (dB)")
 async def escala_log(
-    file: UploadFile = File(..., description="Archivo WAV de entrada"),
+    file: UploadFile = File(..., description="Archivo WAV de entrada"),  # noqa: B008
 ) -> dict:
     """Convierte una senal a escala logaritmica normalizada a 0 dB en el maximo."""
     signal, fs = await _leer_audio(file)

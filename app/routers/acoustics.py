@@ -25,7 +25,9 @@ async def _leer_ri(file: UploadFile) -> tuple:
             signal = signal[:, 0]
         return signal, int(fs)
     except Exception as e:
-        raise HTTPException(status_code=422, detail=f"No se pudo leer el archivo de audio: {e}")
+        raise HTTPException(
+            status_code=422, detail=f"No se pudo leer el archivo de audio: {e}"
+        ) from e
 
 
 def _serializar_params(params: dict) -> dict:
@@ -35,7 +37,7 @@ def _serializar_params(params: dict) -> dict:
 
 @router.post("/parameters", summary="Calcula parametros acusticos ISO 3382")
 async def calcular_parametros(
-    file: UploadFile = File(..., description="Archivo WAV con la respuesta al impulso"),
+    file: UploadFile = File(..., description="Archivo WAV con la respuesta al impulso"),  # noqa: B008
 ) -> dict:
     """Calcula EDT, T10, T20, T30, D50 y C80 por banda de octava segun ISO 3382."""
     ri, fs = await _leer_ri(file)
@@ -44,13 +46,13 @@ async def calcular_parametros(
     try:
         params = calcular_parametros_acusticos(ri, fs)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error al calcular parametros: {e}")
+        raise HTTPException(status_code=500, detail=f"Error al calcular parametros: {e}") from e
     return _serializar_params(params)
 
 
 @router.post("/parameters/by-bands", summary="Parametros acusticos reorganizados por banda")
 async def calcular_parametros_por_bandas(
-    file: UploadFile = File(..., description="Archivo WAV con la respuesta al impulso"),
+    file: UploadFile = File(..., description="Archivo WAV con la respuesta al impulso"),  # noqa: B008
 ) -> dict:
     """Mismo calculo que /parameters pero el resultado esta organizado por frecuencia de banda."""
     ri, fs = await _leer_ri(file)
@@ -59,7 +61,7 @@ async def calcular_parametros_por_bandas(
     try:
         params = calcular_parametros_acusticos(ri, fs)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error al calcular parametros: {e}")
+        raise HTTPException(status_code=500, detail=f"Error al calcular parametros: {e}") from e
 
     bandas: dict = {}
     for parametro, valores in params.items():

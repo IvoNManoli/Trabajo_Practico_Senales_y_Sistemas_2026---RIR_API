@@ -28,7 +28,7 @@ async def obtener_frecuencias() -> dict:
 
 @router.post("/band", summary="Filtra audio por banda de octava")
 async def filtrar_banda(
-    file: UploadFile = File(..., description="Archivo WAV de entrada"),
+    file: UploadFile = File(..., description="Archivo WAV de entrada"),  # noqa: B008
     fc: float = Form(..., description="Frecuencia central de la banda en Hz"),
 ) -> StreamingResponse:
     """Aplica un filtro pasabanda de una octava (Butterworth orden 4, fase cero) al audio."""
@@ -48,7 +48,9 @@ async def filtrar_banda(
             signal = signal[:, 0]
         fs = int(fs)
     except Exception as e:
-        raise HTTPException(status_code=422, detail=f"No se pudo leer el archivo de audio: {e}")
+        raise HTTPException(
+            status_code=422, detail=f"No se pudo leer el archivo de audio: {e}"
+        ) from e
 
     filtered = filtro_octava(signal, fc=fc, fs=fs)
 
