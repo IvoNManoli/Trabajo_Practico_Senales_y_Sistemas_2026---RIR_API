@@ -5,6 +5,7 @@ Milestone 1: Generacion de senales.
 
 import numpy as np
 
+
 def generar_ruido_rosa(duracion: float, fs: int) -> np.ndarray:
     """Genera una senal de ruido rosa de la duracion especificada.
 
@@ -45,7 +46,8 @@ def generar_ruido_rosa(duracion: float, fs: int) -> np.ndarray:
     # Dividir cada componente por sqrt(f) (omitir f=0 para evitar division por cero).
     factores = np.ones_like(frecuencias)
     factores[1:] = 1.0 / np.sqrt(frecuencias[1:])
-    espectro_rosa_fft = (ruido_fft * factores)  # Filtro para generar el ruido rosa (cuanta mayor es la frecuencia menor es la energía)
+    # Mayor frecuencia → menor energía (espectro 1/f)
+    espectro_rosa_fft = ruido_fft * factores
     # Aplicar la transformada inversa (np.fft.irfft)
     ruido_rosa = np.fft.irfft(espectro_rosa_fft, n=n_muestras)  # Pasando de frecuencial a temporal
     # Normalizar la señal resultante al rango [-1, 1].
