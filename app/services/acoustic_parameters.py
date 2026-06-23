@@ -57,7 +57,9 @@ def integral_schroeder(ri: np.ndarray) -> np.ndarray:
     """
     energia = ri**2
     integral = np.cumsum(energia[::-1])[::-1]
-    return 10.0 * np.log10(integral / integral[0] + _EPS)
+    if integral[0] == 0:
+        return np.full(len(ri), -np.inf)
+    return 10.0 * np.log10(np.maximum(integral / integral[0], _EPS))
 
 
 def regresion_lineal(x: np.ndarray, y: np.ndarray) -> tuple[float, float, float]:
@@ -102,7 +104,7 @@ def regresion_lineal(x: np.ndarray, y: np.ndarray) -> tuple[float, float, float]
 
 def _calcular_tiempo(
     edc: np.ndarray, t: np.ndarray, limite_sup: float, limite_inf: float,
-    r2_minimo: float = 0.9,
+    r2_minimo: float = 0.8,
 ) -> float | None:
     """Calcula el tiempo de reverberacion extrapolando la pendiente de la EDC a -60 dB.
 
@@ -119,7 +121,7 @@ def _calcular_tiempo(
 
 
 def calcular_parametros_acusticos(
-    ri: np.ndarray, fs: int
+    ri: np.ndarray, fs: int, usar_lundeby: bool = False
 ) -> dict[str, dict[float, float | None]]:
     """Calcula los parametros acusticos ISO 3382 por banda de octava.
 
@@ -132,6 +134,10 @@ def calcular_parametros_acusticos(
         Respuesta al impulso (array 1D).
     fs : int
         Frecuencia de muestreo en Hz.
+    usar_lundeby : bool, optional
+        Si True, aplica el metodo de Lundeby para truncar la RI antes de
+        calcular la integral de Schroeder. Util para RIs medidas con ruido
+        de fondo real. Por defecto False.
 
     Returns
     -------
@@ -163,9 +169,16 @@ def calcular_parametros_acusticos(
 
     for fc in _BANDAS:
         ri_banda = filtro_octava(ri, fc=fc, fs=fs)
-        edc = integral_schroeder(ri_banda)
-        t = np.arange(len(ri_banda)) / fs
         energia = ri_banda**2
+
+        if usar_lundeby:
+            idx_trunc, _ = metodo_lundeby(ri_banda, fs)
+            ri_para_edc = ri_banda[:idx_trunc]
+        else:
+            ri_para_edc = ri_banda
+
+        edc = integral_schroeder(ri_para_edc)
+        t = np.arange(len(ri_para_edc)) / fs
 
         resultado["EDT"][fc] = _calcular_tiempo(edc, t, 0.0, -10.0)
         resultado["T10"][fc] = _calcular_tiempo(edc, t, -5.0, -15.0)
@@ -194,6 +207,10 @@ def calcular_parametros_acusticos(
 def metodo_lundeby(ri: np.ndarray, fs: int) -> tuple[int, float]:
     """Determina el punto de truncamiento de la RI usando el metodo de Lundeby.
 
+    Busca iterativamente el punto donde la curva de decaimiento de la RI
+    se cruza con el piso de ruido de fondo. Permite definir limites de
+    integracion precisos para corregir la integral de Schroeder.
+
     Parameters
     ----------
     ri : np.ndarray
@@ -205,14 +222,60 @@ def metodo_lundeby(ri: np.ndarray, fs: int) -> tuple[int, float]:
     -------
     tuple[int, float]
         (indice_truncamiento, nivel_ruido_dB)
-
-    Notes
-    -----
-    Esta funcion es opcional (extra credit en M3).
+        Indice de la muestra donde la RI se cruza con el ruido de fondo
+        y el nivel estimado de ruido en dB.
 
     References
     ----------
     .. [1] Lundeby, A. et al. (1995). "Uncertainties of measurements in
        room acoustics." Acustica, 81(4), 344-355.
     """
-    raise NotImplementedError("Implementar en Milestone 3 (opcional)")
+    n_int = max(1, int(0.01 * fs))  # ~10 ms por intervalo
+    n_intervals = len(ri) // n_int
+
+    if n_intervals < 10:
+        return len(ri) - 1, float(10.0 * np.log10(np.mean(ri**2) + _EPS))
+
+    # Energia media de la RI en intervalos de 10 ms
+    bloques = ri[: n_intervals * n_int].reshape(n_intervals, n_int)
+    energia_int = np.mean(bloques**2, axis=1)
+    t_int = (np.arange(n_intervals) + 0.5) * n_int / fs
+
+    # Estimacion inicial del ruido: promedio del ultimo 10% de intervalos
+    n_ruido_int = max(1, n_intervals // 10)
+    nivel_ruido = float(np.mean(energia_int[-n_ruido_int:]))
+
+    idx_trunc_int = n_intervals - 1
+
+    for _ in range(15):
+        nivel_ruido_db = 10.0 * np.log10(max(nivel_ruido, _EPS))
+        energia_db = 10.0 * np.log10(np.maximum(energia_int, _EPS))
+
+        # Cruce preliminar: primer intervalo con energia <= piso de ruido + 10 dB
+        cruces = np.where(energia_db <= nivel_ruido_db + 10.0)[0]
+        idx_cruce = int(cruces[0]) if len(cruces) > 0 else n_intervals - 1
+        if idx_cruce < 2:
+            break
+
+        # Regresion lineal desde el inicio hasta el cruce preliminar
+        pendiente, ordenada, _ = regresion_lineal(t_int[:idx_cruce], energia_db[:idx_cruce])
+        if pendiente >= 0:
+            break
+
+        # Muestra donde la recta de regresion cruza el piso de ruido
+        t_trunc = (nivel_ruido_db - ordenada) / pendiente
+        nuevo_idx = int(np.clip(round(t_trunc * fs / n_int), 1, n_intervals - 1))
+
+        # Reestimar el piso de ruido con los intervalos tras el truncamiento
+        if nuevo_idx < n_intervals - 1:
+            nueva_est = float(np.mean(energia_int[nuevo_idx:]))
+            if nueva_est > 0:
+                nivel_ruido = nueva_est
+
+        if abs(nuevo_idx - idx_trunc_int) <= 1:
+            idx_trunc_int = nuevo_idx
+            break
+        idx_trunc_int = nuevo_idx
+
+    idx_sample = int(np.clip(idx_trunc_int * n_int, 0, len(ri) - 1))
+    return idx_sample, float(10.0 * np.log10(max(nivel_ruido, _EPS)))

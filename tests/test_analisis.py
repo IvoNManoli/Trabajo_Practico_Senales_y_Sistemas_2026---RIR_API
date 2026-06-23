@@ -6,6 +6,7 @@ import pytest
 from app.services.acoustic_parameters import (
     calcular_parametros_acusticos,
     integral_schroeder,
+    metodo_lundeby,
     regresion_lineal,
     suavizar_signal,
 )
@@ -150,3 +151,58 @@ class TestCalcularParametros:
             assert param in params
         for fc in [125.0, 250.0, 500.0, 1000.0, 2000.0, 4000.0]:
             assert fc in params["T30"]
+
+    def test_usar_lundeby_retorna_parametros_validos(self, ri_con_t60_conocido):
+        """Con usar_lundeby=True, T30 a 1000 Hz debe seguir siendo valido."""
+        ri, fs, t60 = ri_con_t60_conocido
+        params = calcular_parametros_acusticos(ri, fs, usar_lundeby=True)
+        t30_1000 = params["T30"][1000.0]
+        assert t30_1000 is not None
+        assert abs(t30_1000 - t60) < t60 * 0.20
+
+
+class TestMetodoLundeby:
+    """Tests para la funcion metodo_lundeby."""
+
+    def test_tipos_de_retorno(self):
+        """Debe retornar (int, float) con el indice dentro del rango valido."""
+        np.random.seed(0)
+        fs = 44100
+        ri = sintetizar_ri({1000.0: 1.5}, fs, duracion=4.0)
+        idx, ruido_db = metodo_lundeby(ri, fs)
+        assert isinstance(idx, int)
+        assert isinstance(ruido_db, float)
+        assert 0 <= idx < len(ri)
+
+    def test_trunca_antes_del_final_con_ruido(self):
+        """Con ruido de fondo real, el truncamiento debe caer antes del final de la senal."""
+        np.random.seed(42)
+        fs = 44100
+        ri = sintetizar_ri({1000.0: 1.0}, fs, duracion=4.0)
+        # Ruido de fondo a -40 dB relativo al pico de la RI
+        amplitud_ruido = 10 ** (-40.0 / 20.0) * np.max(np.abs(ri))
+        ri_ruidosa = ri + np.random.randn(len(ri)) * amplitud_ruido
+        idx, _ = metodo_lundeby(ri_ruidosa, fs)
+        assert idx < len(ri_ruidosa) - 1
+
+    def test_con_ruido_trunca_antes_que_sin_ruido(self):
+        """Con ruido de fondo, el truncamiento debe ser mas temprano que sin ruido."""
+        np.random.seed(7)
+        fs = 44100
+        ri = sintetizar_ri({1000.0: 1.0}, fs, duracion=4.0)
+        amplitud_ruido = 10 ** (-30.0 / 20.0) * np.max(np.abs(ri))
+        ri_ruidosa = ri + np.random.randn(len(ri)) * amplitud_ruido
+        idx_limpio, _ = metodo_lundeby(ri, fs)
+        idx_ruidoso, _ = metodo_lundeby(ri_ruidosa, fs)
+        assert idx_ruidoso < idx_limpio
+
+    def test_estima_nivel_ruido_razonable(self):
+        """El nivel de ruido estimado debe estar dentro de +-6 dB del nivel real."""
+        np.random.seed(3)
+        fs = 44100
+        ri = sintetizar_ri({1000.0: 0.5}, fs, duracion=4.0)
+        amplitud_ruido = 10 ** (-50.0 / 20.0) * np.max(np.abs(ri))
+        ri_ruidosa = ri + np.random.randn(len(ri)) * amplitud_ruido
+        _, ruido_estimado_db = metodo_lundeby(ri_ruidosa, fs)
+        ruido_real_db = 10.0 * np.log10(amplitud_ruido**2)
+        assert abs(ruido_estimado_db - ruido_real_db) < 6.0
