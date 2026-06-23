@@ -203,7 +203,75 @@
 
 ---
 
+---
+
+## M3 — Producto Final
+
+### Sesión 1 — 23/06/2026 (Claude Code en VS Code)
+
+**Herramienta:** Claude Code (claude-sonnet-4-6, extensión VS Code)
+
+---
+
+**1. Revisión de `acoustic_parameters.py` contra la consigna**
+
+- *Prompt:* Leer `m3_consigna.md` y revisar `acoustic_parameters.py`.
+- *Respuesta:* Se leyeron ambos archivos en paralelo. El código implementaba correctamente `suavizar_signal` (Hilbert y media móvil), `integral_schroeder`, `regresion_lineal` (manual), `_calcular_tiempo` y `calcular_parametros_acusticos` con los 6 parámetros ISO 3382. Se detectaron tres problemas: (1) `integral_schroeder` usaba `integral / integral[0] + _EPS` en el log, lo que hacía que `edc[0] ≈ 9.65e-16 > 0` y la máscara EDT `edc <= 0.0` excluyera la primera muestra; (2) sin guarda para `integral[0] == 0` (crash con RI de energía nula); (3) `r2_minimo=0.9` demasiado estricto para bandas bajas en mediciones reales.
+
+---
+
+**2. Revisión del estado de la rama y merge con main**
+
+- *Prompt:* Revisar el estado de la rama `feature/documentacion`, que parecía estar en conflicto con main por trabajo hecho sin traer cambios previos.
+- *Respuesta:* Se identificó que la rama estaba 4 commits detrás de main (`cdf01cc`, `89a447e`, `02fcaed`, `00ade92`). Un `git merge-tree` de solo lectura confirmó que solo dos archivos generarían conflictos reales: `pyproject.toml` (la rama agregó `[dependency-groups]` que main no tiene) y `tests/test_analisis.py` (main tenía tests M2 incompletos con firma vieja de `regresion_lineal` de 2 valores; la rama tenía los tests M3 completos con 3 valores). El resto de los archivos (`ci.yml`, `signal_utils.py`, `grabacion_utils.py`, etc.) se auto-mergeaban sin conflicto.
+
+---
+
+**3. Merge de main en `feature/documentacion`**
+
+- *Prompt:* Hacer el merge.
+- *Respuesta:* Se ejecutó `git merge main`. Los dos conflictos esperados aparecieron. Se resolvieron quedándose con la versión de la rama en ambos casos (es un superconjunto de la versión de main). Adicionalmente, el auto-merge de `tests/test_analisis.py` había eliminado el `import pytest` que la rama tenía — se restauró manualmente. Commit de merge: `Merge branch 'main' into feature/documentacion`. Los cambios incorporados de main más relevantes: normalización en `cargar_audio`, preroll en `reproducir_y_grabar`, instalación de `libportaudio2` en CI (sin esto los tests fallan en GitHub Actions).
+
+---
+
+**4. Correcciones en `acoustic_parameters.py`**
+
+- *Prompt:* Solucionar los problemas identificados en el punto 1.
+- *Respuesta:* Tres cambios: (1) Se reemplazó `10*log10(integral / integral[0] + _EPS)` por `10*log10(np.maximum(integral / integral[0], _EPS))`: al aplicar el floor *sobre el cociente normalizado*, `edc[0] = log10(max(1.0, eps)) = 0.0` exacto, resolviendo el problema de la máscara EDT y sin alterar el comportamiento en el resto de la curva. (2) Se agregó guarda `if integral[0] == 0: return np.full(len(ri), -np.inf)` para RI de energía nula. (3) Se bajó `r2_minimo` de `0.9` a `0.8`. Los 14 tests existentes pasaron.
+
+---
+
+**5. Implementación de `metodo_lundeby`**
+
+- *Prompt:* Implementar `metodo_lundeby` para determinar el punto de truncamiento de la RI usando el método Lundeby, para después corregir la integral de Schroeder.
+- *Respuesta:* Se implementó el algoritmo iterativo de Lundeby (1995): (1) divide la RI en bloques de ~10 ms y calcula la energía media por bloque; (2) estima el piso de ruido inicial con el último 10% de los bloques; (3) en cada iteración, encuentra el primer bloque donde la energía cae a ≤ piso de ruido + 10 dB (SNR = 10 dB); (4) hace regresión lineal desde el inicio hasta ese cruce; (5) calcula dónde la recta cruza el piso de ruido → nuevo índice de truncamiento; (6) re-estima el piso de ruido con los bloques después de ese punto; (7) repite hasta convergencia (±1 bloque, máx. 15 iteraciones). Retorna `(indice_truncamiento: int, nivel_ruido_dB: float)`. Smoke test: RI sintética T60=1.5 s / 4 s → truncamiento en 3.63 s.
+
+---
+
+**6. Integración de Lundeby en `calcular_parametros_acusticos`**
+
+- *Prompt:* Integrar el flujo de corrección de la integral de Schroeder en `calcular_parametros_acusticos`, entre `filtro_octava` e `integral_schroeder`, con un parámetro opcional `usar_lundeby: bool = False` para comparar con/sin corrección.
+- *Respuesta:* Se agregó el parámetro `usar_lundeby` a la firma. Dentro del loop por bandas, `energia = ri_banda**2` se movió antes del bloque condicional para que D50 y C80 siempre usen la banda completa sin truncar. Si `usar_lundeby=True`, se calcula `idx_trunc, _ = metodo_lundeby(ri_banda, fs)` y se pasa `ri_banda[:idx_trunc]` a `integral_schroeder`; `t` se recalcula consistentemente con la longitud truncada. D50 y C80 no se ven afectados.
+
+---
+
+**7. Tests para `metodo_lundeby`**
+
+- *Prompt:* Agregar tests para `metodo_lundeby` en `test_analisis.py`.
+- *Respuesta:* Se agregó `metodo_lundeby` a los imports y se creó la clase `TestMetodoLundeby` con 4 tests: (1) `test_tipos_de_retorno`: verifica que retorna `(int, float)` con índice en `[0, len(ri))`. (2) `test_trunca_antes_del_final_con_ruido`: con ruido agregado a −40 dB relativo al pico, el índice cae antes del último sample. (3) `test_con_ruido_trunca_antes_que_sin_ruido`: con ruido a −30 dB el truncamiento es más temprano que sin ruido. (4) `test_estima_nivel_ruido_razonable`: el nivel estimado queda dentro de ±6 dB del nivel real. También se agregó `test_usar_lundeby_retorna_parametros_validos` a `TestCalcularParametros` (integración end-to-end con `usar_lundeby=True`). 19/19 tests en verde.
+
+---
+
+**8. Intento de actualización de gráficos de M2 (revertido)**
+
+- *Prompt:* Actualizar los gráficos de M2 donde se grafican RIs para mostrar solo la envolvente via `suavizar_signal`.
+- *Respuesta:* Se modificó `generate_m2.py` para importar `suavizar_signal` y aplicar `suavizar_signal(ri, 'hilbert')` en los 6 plots de RI (Elveden Hall, Maes Howe y 4 plots de RI medida). El resultado no fue el esperado y se revirtió con `git restore docs/m2/generate_m2.py`.
+
+---
+
 ## Pendiente para próximas sesiones
 
 - Crear y pushear el tag `v0.2.0` en main
-- Iniciar M3 (vence 7/07): `integral_schroeder`, `regresion_lineal`, `calcular_parametros_acusticos`, endpoints FastAPI, informe
+- Endpoints FastAPI (routers, schemas) para M3
+- Informe final en Quarto/LaTeX
+- Validación contra REW con RIs reales de OpenAIR
