@@ -55,14 +55,14 @@ print("OK Maes Howe OK:", ri_m.shape, fs_m)
 # PLOT ELVEDEN — IR
 # =========================
 t_e = np.arange(len(ri_e)) / fs_e
-env_e = np.sqrt(suavizar_signal(ri_e, int(0.01 * fs_e)))
+env_e = np.sqrt(suavizar_signal(ri_e, int(0.08 * fs_e)))
 
 plt.figure(figsize=(10, 4))
 plt.plot(t_e, env_e)
-plt.title("Elveden Hall - Envolvente de la IR")
+plt.title("Elveden Hall RI (Envolvente)")
 plt.xlabel("Tiempo [s]")
-plt.ylabel("Envolvente [amplitud]")
-plt.xlim(left=0)
+plt.ylabel("Amplitud")
+plt.xlim(0, 5)
 plt.ylim(bottom=0)
 plt.grid()
 
@@ -80,10 +80,10 @@ env_m = np.sqrt(suavizar_signal(ri_m, int(0.01 * fs_m)))
 
 plt.figure(figsize=(10, 4))
 plt.plot(t_m, env_m)
-plt.title("Maes Howe - Envolvente de la IR")
+plt.title("Maes Howe RI (Envolvente)")
 plt.xlabel("Tiempo [s]")
-plt.ylabel("Envolvente [amplitud]")
-plt.xlim(0, 0.6)
+plt.ylabel("Amplitud")
+plt.xlim(0, 0.5)
 plt.ylim(bottom=0)
 plt.grid()
 
