@@ -8,13 +8,10 @@ RIR-API es un proyecto educativo que implementa una API REST (FastAPI) con una c
 
 ## Integrantes
 
-- Agustin Birarelli
-    - Legajo 69574
-    - Responsable de generación de señales
-
 - Ivo Manoli
     - Legajo 64189
-    - Responsable de procesamiento
+    - Responsable de procesamiento y 
+    generación de señales
 
 - Gaspar Dallinge
     - Legajo 62751
@@ -24,7 +21,7 @@ RIR-API es un proyecto educativo que implementa una API REST (FastAPI) con una c
 
 ```bash
 # Clonar el repositorio
-git clone https://github.com/AgusBira/signal-systems.git
+git clone https://github.com/IvoNManoli/Trabajo_Practico_Senales_y_Sistemas_2026---RIR_API
 cd trabajo_practico/RIR-API
 
 # Crear entorno virtual e instalar dependencias
@@ -36,10 +33,7 @@ uv pip install -e ".[dev]"
 
 ```bash
 # Iniciar la API con hot-reload
-uvicorn app.main:app --reload
-
-# O usando el modulo directamente
-python -m app.main
+uv run uvicorn app.main:app --reload
 ```
 
 La API estara disponible en `http://localhost:8000`. Documentación interactiva en:
@@ -49,29 +43,33 @@ La API estara disponible en `http://localhost:8000`. Documentación interactiva 
 ## Estructura del proyecto
 
 ```
-rir-api/
+RIR-API/
 ├── app/
-│   ├── __init__.py
-│   ├── main.py                    # Punto de entrada FastAPI
+│   ├── main.py                        # Punto de entrada FastAPI
 │   ├── routers/
-│   │   ├── health.py              # GET /health
-│   │   ├── signals.py             # Endpoints de generación (M1 → M3)
-│   │   ├── filters.py             # Endpoints de filtrado (M2 → M3)
-│   │   ├── acoustics.py           # Endpoints de análisis (M3)
-│   │   └── utils.py               # Endpoints de utilidades (M3)
+│   │   ├── health.py                  # GET /health
+│   │   ├── signals.py                 # Generación de señales (M1)
+│   │   ├── filters.py                 # Filtrado por banda de octava (M2)
+│   │   ├── acoustics.py               # Parámetros acústicos ISO 3382 (M3)
+│   │   ├── analysis.py                # Análisis completo de RI (M3)
+│   │   ├── convolution.py             # Convolución de RI con audio (M3)
+│   │   └── utils.py                   # Schroeder, suavizado, log-scale
 │   ├── schemas/
-│   │   └── ...                    # Modelos Pydantic de request/response
+│   │   ├── signals.py                 # Schemas de request para señales
+│   │   └── responses.py               # Schemas de respuesta para análisis
 │   └── services/
-│       ├── pink_noise.py          # Generación de ruido rosa (M1)
-│       ├── sine_sweep.py          # Generación de sine sweep (M1)
-│       ├── signal_utils.py        # Utilidades de procesamiento (M2)
-│       ├── filter.py              # Filtros de banda de octava (M2)
-│       └── acoustic_parameters.py # Parámetros acústicos ISO 3382 (M3)
+│       ├── pink_noise.py              # Generación de ruido rosa (M1)
+│       ├── sine_sweep.py              # Generación de sine sweep (M1)
+│       ├── signal_utils.py            # Carga, síntesis y deconvolución de RI (M2)
+│       ├── filter.py                  # Filtros de banda de octava (M2)
+│       ├── grabacion_utils.py         # Reproducción y grabación de audio (M2)
+│       ├── acoustic_parameters.py     # EDT, T10, T20, T30, D50, C80, Lundeby (M3)
+│       └── convolution.py             # Convolución de RI con audio (M3)
 ├── tests/
-│   ├── test_generación.py         # Tests de generación (M1)
-│   ├── test_procesamiento.py      # Tests de procesamiento (M2)
-│   ├── test_análisis.py           # Tests de análisis (M3)
-│   └── test_api.py                # Tests de endpoints (M3)
+│   ├── test_generacion.py             # Tests de generación de señales (M1)
+│   ├── test_procesamiento.py          # Tests de procesamiento de RI (M2)
+│   ├── test_analisis.py               # Tests de parámetros acústicos (M3)
+│   └── test_api.py                    # Tests de endpoints HTTP (M3)
 ├── docs/                          # Documentación
 ├── .github/workflows/ci.yml       # Integración continua
 ├── pyproject.toml                 # Configuración del proyecto
@@ -80,32 +78,40 @@ rir-api/
 ## Diagrama de arquitectura
 ```mermaid
 graph LR
-    Client --> R[Routers]
+    Client -->|HTTP| R
 
-    R --> PN[/pink-noise/]
-    R --> SS[/sine-sweep/]
-    R --> AN[/analyze/]
+    subgraph R[Routers]
+        r1[health]
+        r2[signals]
+        r3[filters]
+        r4[acoustics]
+        r5[analysis]
+        r6[convolution]
+        r7[utils]
+    end
 
-    R --> Sch[Schemas]
+    subgraph M1[Services · M1]
+        s1[pink_noise]
+        s2[sine_sweep]
+    end
 
-    Sch --> Req[Request]
-    Sch --> Res[Response]
+    subgraph M2[Services · M2]
+        s3[signal_utils]
+        s4[filter]
+        s5[grabacion_utils]
+    end
 
-    R --> S[Services]
+    subgraph M3[Services · M3]
+        s6[acoustic_parameters]
+        s7[convolution]
+    end
 
-    %% M1
-    S --> Gen[Generación]
-    Gen --> PN2[Ruido rosa]
-    Gen --> SS2[Sine sweep]
-
-    %% M2
-    S --> Proc[Procesamiento]
-    Proc --> Filtros[Filtros]
-    Proc --> Deconv[Deconvolución]
-
-    %% M3
-    S --> Analisis[Análisis]
-    Analisis --> Params[Parámetros acústicos]
+    r2 --> s1 & s2 & s3
+    r3 --> s4
+    r4 --> s6
+    r5 --> s3 & s6
+    r6 --> s7
+    r7 --> s6
 ```
 
 ## Dependencias Externas
