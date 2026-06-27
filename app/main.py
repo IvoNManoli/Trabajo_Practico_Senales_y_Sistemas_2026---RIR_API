@@ -9,7 +9,7 @@ Uso:
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.routers import acoustics, analysis, filters, health, signals, utils
+from app.routers import acoustics, analysis, convolution, filters, health, signals, utils
 
 app = FastAPI(
     title="RIR-API",
@@ -34,6 +34,7 @@ app.include_router(filters.router, prefix="/api/v1/filters", tags=["filters"])
 app.include_router(acoustics.router, prefix="/api/v1/acoustics", tags=["acoustics"])
 app.include_router(analysis.router, prefix="/api/v1/analysis", tags=["analysis"])
 app.include_router(utils.router, prefix="/api/v1/utils", tags=["utils"])
+app.include_router(convolution.router, prefix="/api/v1/convolution", tags=["convolution"])
 
 
 @app.get("/", tags=["root"])

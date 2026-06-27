@@ -12,6 +12,7 @@ from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
 
 from app.services.filter import filtro_octava
+from app.services.signal_utils import cargar_audio
 
 router = APIRouter()
 
@@ -41,16 +42,13 @@ async def filtrar_banda(
             ),
         )
     try:
-        contents = await file.read()
-        buf = io.BytesIO(contents)
-        signal, fs = sf.read(buf, dtype="float64", always_2d=False)
-        if signal.ndim > 1:
-            signal = signal[:, 0]
-        fs = int(fs)
+        signal, fs = cargar_audio(io.BytesIO(await file.read()))
     except Exception as e:
         raise HTTPException(
             status_code=422, detail=f"No se pudo leer el archivo de audio: {e}"
         ) from e
+    if signal.ndim > 1:
+        signal = signal[:, 0]
 
     filtered = filtro_octava(signal, fc=fc, fs=fs)
 

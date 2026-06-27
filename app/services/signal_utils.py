@@ -3,6 +3,7 @@
 Milestone 2: Procesamiento de la respuesta al impulso.
 """
 
+import io
 from pathlib import Path
 
 import numpy as np
@@ -10,13 +11,14 @@ import soundfile as sf
 from scipy.signal import fftconvolve
 
 
-def cargar_audio(ruta: str | Path) -> tuple[np.ndarray, int]:
+def cargar_audio(ruta: str | Path | io.IOBase) -> tuple[np.ndarray, int]:
     """Carga un archivo de audio y retorna la senal y la frecuencia de muestreo.
 
     Parameters
     ----------
-    ruta : str | Path
-        Ruta al archivo de audio a cargar. Soporta WAV y FLAC.
+    ruta : str | Path | io.IOBase
+        Ruta al archivo de audio en disco, o un objeto file-like (BytesIO).
+        Soporta WAV y FLAC.
 
     Returns
     -------
@@ -29,15 +31,16 @@ def cargar_audio(ruta: str | Path) -> tuple[np.ndarray, int]:
     Raises
     ------
     FileNotFoundError
-        Si el archivo especificado no existe.
+        Si la ruta especificada no existe en disco.
     ValueError
         Si el formato no es soportado o el archivo no puede leerse.
     """
-    ruta = Path(ruta)
-    if not ruta.exists():
-        raise FileNotFoundError(f"Archivo no encontrado: {ruta}")
+    if not isinstance(ruta, io.IOBase):
+        ruta = Path(ruta)
+        if not ruta.exists():
+            raise FileNotFoundError(f"Archivo no encontrado: {ruta}")
     try:
-        audio, fs = sf.read(str(ruta), dtype="float64", always_2d=False)
+        audio, fs = sf.read(ruta, dtype="float64", always_2d=False)
     except Exception as exc:
         raise ValueError(f"No se pudo leer el archivo: {ruta}") from exc
     if np.max(np.abs(audio)) > 0:
