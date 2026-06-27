@@ -14,6 +14,7 @@ sys.path.insert(0, ROOT_DIR)
 
 import soundfile as sf
 
+from app.services.acoustic_parameters import suavizar_signal
 from app.services.signal_utils import a_escala_log, cargar_audio, sintetizar_ri
 
 BANDAS = [125, 250, 500, 1000, 2000, 4000]
@@ -54,12 +55,15 @@ print("OK Maes Howe OK:", ri_m.shape, fs_m)
 # PLOT ELVEDEN — IR
 # =========================
 t_e = np.arange(len(ri_e)) / fs_e
+env_e = np.sqrt(suavizar_signal(ri_e, int(0.08 * fs_e)))
 
 plt.figure(figsize=(10, 4))
-plt.plot(t_e, ri_e)
-plt.title("Elveden Hall - IR")
+plt.plot(t_e, env_e)
+plt.title("Elveden Hall RI (Envolvente)")
 plt.xlabel("Tiempo [s]")
 plt.ylabel("Amplitud")
+plt.xlim(0, 5)
+plt.ylim(bottom=0)
 plt.grid()
 
 out_file = os.path.join(out_img, "elveden_hall_ir.png")
@@ -72,12 +76,15 @@ print("OK Guardado:", out_file)
 # PLOT MAES HOWE — IR
 # =========================
 t_m = np.arange(len(ri_m)) / fs_m
+env_m = np.sqrt(suavizar_signal(ri_m, int(0.01 * fs_m)))
 
 plt.figure(figsize=(10, 4))
-plt.plot(t_m, ri_m)
-plt.title("Maes Howe - IR")
+plt.plot(t_m, env_m)
+plt.title("Maes Howe RI (Envolvente)")
 plt.xlabel("Tiempo [s]")
 plt.ylabel("Amplitud")
+plt.xlim(0, 0.5)
+plt.ylim(bottom=0)
 plt.grid()
 
 out_file = os.path.join(out_img, "maes_howe_ir.png")
@@ -152,11 +159,17 @@ else:
     # t=0 en el pico, margen visible como tiempo negativo
     t_full_ms = (np.arange(len(ri_full_recortada)) - margen_muestras) / fs_med * 1000
 
+    # Envolvente RMS: raiz cuadrada de la energia promediada en ventanas de 10 ms
+    _w = int(0.01 * fs_med)
+    env_full_recortada = np.sqrt(suavizar_signal(ri_full_recortada, _w))
+    env_full = np.sqrt(suavizar_signal(ri_full, _w))
+    env_proc = np.sqrt(suavizar_signal(ri_proc, _w))
+
     plt.figure(figsize=(10, 4))
-    plt.plot(t_full_ms, ri_full_recortada, linewidth=0.5, color="steelblue")
+    plt.plot(t_full_ms, env_full_recortada, linewidth=0.8, color="steelblue")
     plt.xlabel("Tiempo [ms]")
-    plt.ylabel("Amplitud")
-    plt.title("RI medida — Convolución completa")
+    plt.ylabel("Envolvente [amplitud]")
+    plt.title("RI medida — Envolvente de la convolución completa")
     plt.xlim(-MARGEN_MS, 250 - MARGEN_MS)
     plt.grid(alpha=0.3)
     plt.tight_layout()
@@ -170,12 +183,12 @@ else:
     t_onset_ms = -idx_pico_proc / fs_med * 1000
 
     plt.figure(figsize=(10, 4))
-    plt.plot(t_full_ms, ri_full_recortada, linewidth=0.5, color="steelblue")
+    plt.plot(t_full_ms, env_full_recortada, linewidth=0.8, color="steelblue")
     plt.axvline(t_onset_ms, color="tomato", linestyle="--", linewidth=1.5,
                 label=f"Valor inicial de RI aplicando criterio ≈ {-round(t_onset_ms)} ms antes del pico")
     plt.xlabel("Tiempo [ms]")
-    plt.ylabel("Amplitud")
-    plt.title("RI medida — Convolución completa y umbral temporal ")
+    plt.ylabel("Envolvente [amplitud]")
+    plt.title("RI medida — Envolvente y umbral temporal")
     plt.xlim(-MARGEN_MS, 250 - MARGEN_MS)
     plt.legend(loc="upper right")
     plt.grid(alpha=0.3)
@@ -190,19 +203,21 @@ else:
     t_all_ms = (np.arange(len(ri_full)) - idx_pico) / fs_med * 1000
     t_noise_start_ms = float((len(ri_full) - n_ruido - idx_pico) / fs_med * 1000)
     t_noise_end_ms   = float((len(ri_full) - idx_pico) / fs_med * 1000)
+    # Nivel de piso de ruido en la envolvente (promedio del último 10%)
+    y_noise_level = float(np.mean(env_full[-n_ruido:]))
 
     fig, ax = plt.subplots(figsize=(13, 4))
-    ax.plot(t_all_ms, ri_full, linewidth=0.3, color="steelblue")
+    ax.plot(t_all_ms, env_full, linewidth=0.8, color="steelblue")
     ax.axvspan(t_noise_start_ms, t_noise_end_ms, alpha=0.15, color="tomato", zorder=0)
 
     ylim = ax.get_ylim()
     y_span = ylim[1] - ylim[0]
-    x_text = t_noise_end_ms / 2   # centro del eje x completo
-    y_text = ylim[0] + y_span * 0.82   # desplazado hacia arriba
+    x_text = t_noise_end_ms / 2
+    y_text = ylim[0] + y_span * 0.82
 
     ax.annotate(
-        f"Último 10% de la señal:\nEstimación RMS del piso de ruido\npara el umbral",
-        xy=(t_noise_start_ms + (t_noise_end_ms - t_noise_start_ms) * 0.3, 0),
+        "Último 10% de la señal:\nEstimación RMS del piso de ruido\npara el umbral",
+        xy=(t_noise_start_ms + (t_noise_end_ms - t_noise_start_ms) * 0.3, y_noise_level),
         xytext=(x_text, y_text),
         fontsize=14,
         color="tomato",
@@ -214,8 +229,8 @@ else:
 
     ax.set_xlim(-MARGEN_MS, t_noise_end_ms + MARGEN_MS)
     ax.set_xlabel("Tiempo [ms]")
-    ax.set_ylabel("Amplitud")
-    ax.set_title("Estimación del piso de ruido en la convolución completa")
+    ax.set_ylabel("Envolvente [amplitud]")
+    ax.set_title("Estimación del piso de ruido — Envolvente de la convolución completa")
     ax.grid(alpha=0.3)
     fig.tight_layout()
     out_file = os.path.join(out_img, "ri_medida_piso_ruido.png")
@@ -227,10 +242,10 @@ else:
     t_proc_ms = np.arange(len(ri_proc)) / fs_med * 1000
 
     plt.figure(figsize=(10, 4))
-    plt.plot(t_proc_ms, ri_proc, linewidth=0.5, color="steelblue")
+    plt.plot(t_proc_ms, env_proc, linewidth=0.8, color="steelblue")
     plt.xlabel("Tiempo [ms]")
-    plt.ylabel("Amplitud")
-    plt.title("RI de obtener_ri_desde_sweep()")
+    plt.ylabel("Envolvente [amplitud]")
+    plt.title("Envolvente de RI de obtener_ri_desde_sweep()")
     plt.xlim(0, 250)
     plt.grid(alpha=0.3)
     plt.tight_layout()

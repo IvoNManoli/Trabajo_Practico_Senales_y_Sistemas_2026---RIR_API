@@ -7,34 +7,45 @@ Uso:
 """
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
-from app.routers import health
+from app.routers import acoustics, analysis, convolution, filters, health, signals, utils
 
 app = FastAPI(
-    title="RIR-API",
-    description="API para procesamiento y analisis de respuestas al impulso segun ISO 3382.",
-    version="0.1.0",
+    title="RIR-API: MANOLI-DALLINGE",
+    description=(
+        "API REST para procesamiento y analisis de respuestas al impulso segun ISO 3382. "
+        "Incluye generacion de senales, procesamiento de RI, convolucion con audio y "
+        "calculo de parametros acusticos EDT, T10, T20, T30, D50 y C80."
+    ),
+    version="1.0.0",
 )
 
-# Routers
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 app.include_router(health.router)
+app.include_router(signals.router, prefix="/api/v1/signals", tags=["signals"])
+app.include_router(filters.router, prefix="/api/v1/filters", tags=["filters"])
+app.include_router(acoustics.router, prefix="/api/v1/acoustics", tags=["acoustics"])
+app.include_router(analysis.router, prefix="/api/v1/analysis", tags=["analysis"])
+app.include_router(utils.router, prefix="/api/v1/utils", tags=["utils"])
+app.include_router(convolution.router, prefix="/api/v1/convolution", tags=["convolution"])
 
-# TODO (M3): Agregar routers de signals, filters, acoustics, analysis, utils
-# app.include_router(signals.router, prefix="/api/v1/signals", tags=["signals"])
-# app.include_router(filters.router, prefix="/api/v1/filters", tags=["filters"])
-# app.include_router(acoustics.router, prefix="/api/v1/acoustics", tags=["acoustics"])
-# app.include_router(analysis.router, prefix="/api/v1/analysis", tags=["analysis"])
-# app.include_router(utils.router, prefix="/api/v1/utils", tags=["utils"])
 
-
-@app.get("/")
-async def root():
+@app.get("/", tags=["root"])
+async def root() -> dict:
     """Informacion basica de la API."""
     return {
         "name": "RIR-API",
-        "version": "0.1.0",
-        "description": "Room Impulse Response API",
+        "version": "1.0.0",
+        "description": "Room Impulse Response API — ISO 3382",
         "docs": "/docs",
+        "redoc": "/redoc",
     }
 
 
