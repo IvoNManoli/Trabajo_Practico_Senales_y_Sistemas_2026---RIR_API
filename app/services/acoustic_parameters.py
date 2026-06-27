@@ -6,7 +6,7 @@ Milestone 3: Analisis de parametros acusticos.
 import numpy as np
 from scipy.signal import hilbert
 
-_BANDAS: list[float] = [125.0, 250.0, 500.0, 1000.0, 2000.0, 4000.0]
+_BANDAS: list[float] = [125.0, 250.0, 500.0, 1000.0, 2000.0, 4000.0, 8000.0, 16000.0]
 _EPS = np.finfo(float).eps
 
 
@@ -126,7 +126,7 @@ def calcular_parametros_acusticos(
     """Calcula los parametros acusticos ISO 3382 por banda de octava.
 
     Calcula EDT, T10, T20, T30, D50 y C80 para las bandas de octava
-    125, 250, 500, 1000, 2000 y 4000 Hz.
+    125, 250, 500, 1000, 2000, 4000, 8000 y 16000 Hz.
 
     Parameters
     ----------

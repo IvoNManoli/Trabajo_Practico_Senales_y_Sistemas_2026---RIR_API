@@ -19,21 +19,3 @@ class SineSweepRequest(BaseModel):
     fs: int = Field(default=44100, ge=8000, le=192000, description="Frecuencia de muestreo en Hz")
 
 
-class SyntheticIRRequest(BaseModel):
-    """Parametros para generar una respuesta al impulso sintetica."""
-
-    t60_por_banda: dict[str, float] = Field(
-        default={
-            "125": 2.0,
-            "250": 2.0,
-            "500": 2.0,
-            "1000": 2.0,
-            "2000": 2.0,
-            "4000": 2.0,
-        },
-        description="T60 en segundos por banda de octava. Claves: frecuencia central en Hz.",
-    )
-    fs: int = Field(default=44100, ge=8000, le=192000, description="Frecuencia de muestreo en Hz")
-    duracion: float = Field(
-        default=3.0, ge=0.1, le=30.0, description="Duracion de la RI en segundos"
-    )

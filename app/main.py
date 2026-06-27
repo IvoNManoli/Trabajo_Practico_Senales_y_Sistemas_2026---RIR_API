@@ -9,14 +9,14 @@ Uso:
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.routers import acoustics, analysis, filters, health, signals, utils
+from app.routers import acoustics, analysis, convolution, filters, health, signals, utils
 
 app = FastAPI(
-    title="RIR-API",
+    title="RIR-API: MANOLI-DALLINGE",
     description=(
         "API REST para procesamiento y analisis de respuestas al impulso segun ISO 3382. "
-        "Incluye generacion de senales (M1), procesamiento de RI (M2) y "
-        "calculo de parametros acusticos EDT, T10, T20, T30, D50 y C80 (M3)."
+        "Incluye generacion de senales, procesamiento de RI, convolucion con audio y "
+        "calculo de parametros acusticos EDT, T10, T20, T30, D50 y C80."
     ),
     version="1.0.0",
 )
@@ -34,6 +34,7 @@ app.include_router(filters.router, prefix="/api/v1/filters", tags=["filters"])
 app.include_router(acoustics.router, prefix="/api/v1/acoustics", tags=["acoustics"])
 app.include_router(analysis.router, prefix="/api/v1/analysis", tags=["analysis"])
 app.include_router(utils.router, prefix="/api/v1/utils", tags=["utils"])
+app.include_router(convolution.router, prefix="/api/v1/convolution", tags=["convolution"])
 
 
 @app.get("/", tags=["root"])
