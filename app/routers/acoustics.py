@@ -7,27 +7,12 @@ Endpoints:
 
 import io
 
-import soundfile as sf
 from fastapi import APIRouter, File, HTTPException, UploadFile
 
 from app.services.acoustic_parameters import calcular_parametros_acusticos
+from app.services.signal_utils import cargar_audio
 
 router = APIRouter()
-
-
-async def _leer_ri(file: UploadFile) -> tuple:
-    """Lee una RI desde un archivo WAV subido via multipart."""
-    try:
-        contents = await file.read()
-        buf = io.BytesIO(contents)
-        signal, fs = sf.read(buf, dtype="float64", always_2d=False)
-        if signal.ndim > 1:
-            signal = signal[:, 0]
-        return signal, int(fs)
-    except Exception as e:
-        raise HTTPException(
-            status_code=422, detail=f"No se pudo leer el archivo de audio: {e}"
-        ) from e
 
 
 def _serializar_params(params: dict) -> dict:
@@ -40,7 +25,14 @@ async def calcular_parametros(
     file: UploadFile = File(..., description="Archivo WAV con la respuesta al impulso"),  # noqa: B008
 ) -> dict:
     """Calcula EDT, T10, T20, T30, D50 y C80 por banda de octava segun ISO 3382."""
-    ri, fs = await _leer_ri(file)
+    try:
+        ri, fs = cargar_audio(io.BytesIO(await file.read()))
+    except Exception as e:
+        raise HTTPException(
+            status_code=422, detail=f"No se pudo leer el archivo de audio: {e}"
+        ) from e
+    if ri.ndim > 1:
+        ri = ri[:, 0]
     if len(ri) < int(fs * 0.1):
         raise HTTPException(status_code=400, detail="La RI es demasiado corta (minimo 0.1 s)")
     try:
@@ -55,7 +47,14 @@ async def calcular_parametros_por_bandas(
     file: UploadFile = File(..., description="Archivo WAV con la respuesta al impulso"),  # noqa: B008
 ) -> dict:
     """Mismo calculo que /parameters pero el resultado esta organizado por frecuencia de banda."""
-    ri, fs = await _leer_ri(file)
+    try:
+        ri, fs = cargar_audio(io.BytesIO(await file.read()))
+    except Exception as e:
+        raise HTTPException(
+            status_code=422, detail=f"No se pudo leer el archivo de audio: {e}"
+        ) from e
+    if ri.ndim > 1:
+        ri = ri[:, 0]
     if len(ri) < int(fs * 0.1):
         raise HTTPException(status_code=400, detail="La RI es demasiado corta (minimo 0.1 s)")
     try:

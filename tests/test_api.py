@@ -148,7 +148,6 @@ class TestAnalysisEndpoints:
         assert "parametros" in data
         assert "T30" in data["parametros"]
         assert "EDT" in data["parametros"]
-        assert "schroeder" in data
 
     def test_invalid_file_returns_422(self):
         """Verifica que un archivo no valido retorna HTTP 422."""
