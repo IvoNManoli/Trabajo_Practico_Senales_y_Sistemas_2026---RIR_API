@@ -86,10 +86,32 @@ class TestSignalsEndpoints:
         """Verifica que /synthetic-ir genera y devuelve un WAV valido."""
         response = client.post(
             "/api/v1/signals/synthetic-ir",
-            json={"t60_por_banda": {"1000": 1.5}, "fs": 44100, "duracion": 3.0},
+            data={"t60_1000": "1.5", "fs": "44100", "duracion": "3.0"},
         )
         assert response.status_code == 200
         assert "audio/wav" in response.headers["content-type"]
+
+    def test_sine_sweep_pair_returns_zip(self):
+        """Verifica que /sine-sweep-pair devuelve un ZIP con sweep y filtro inverso."""
+        response = client.post(
+            "/api/v1/signals/sine-sweep-pair",
+            json={"f1": 100.0, "f2": 8000.0, "duracion": 1.0, "fs": 44100},
+        )
+        assert response.status_code == 200
+        assert "application/zip" in response.headers["content-type"]
+
+    def test_sine_sweep_pair_contiene_dos_wavs(self):
+        """Verifica que el ZIP contiene sine_sweep.wav y filtro_inverso.wav."""
+        import io
+        import zipfile
+        response = client.post(
+            "/api/v1/signals/sine-sweep-pair",
+            json={"f1": 100.0, "f2": 8000.0, "duracion": 1.0, "fs": 44100},
+        )
+        zf = zipfile.ZipFile(io.BytesIO(response.content))
+        nombres = zf.namelist()
+        assert "sine_sweep.wav" in nombres
+        assert "filtro_inverso.wav" in nombres
 
     def test_sine_sweep_f1_mayor_f2_retorna_400(self):
         """Verifica que f1 >= f2 retorna HTTP 400."""
@@ -183,6 +205,46 @@ class TestAcousticsEndpoints:
         assert response.status_code == 200
         data = response.json()
         assert "bandas_hz" in data
+
+
+class TestConvolucionEndpoints:
+    """Tests para los endpoints de convolucion de audio."""
+
+    def test_convolucion_con_ri_returns_wav(self):
+        """Verifica que /with-ir devuelve un WAV convolucionado."""
+        audio_bytes = _generar_wav_bytes(duracion=1.0)
+        ri_bytes = _generar_wav_bytes(duracion=0.5)
+        response = client.post(
+            "/api/v1/convolution/with-ir",
+            files={
+                "audio": ("audio.wav", audio_bytes, "audio/wav"),
+                "ri": ("ri.wav", ri_bytes, "audio/wav"),
+            },
+        )
+        assert response.status_code == 200
+        assert "audio/wav" in response.headers["content-type"]
+
+    def test_convolucion_con_ri_sintetica_returns_wav(self):
+        """Verifica que /with-synthetic-ir devuelve un WAV con reverb sintetica."""
+        audio_bytes = _generar_wav_bytes(duracion=1.0)
+        response = client.post(
+            "/api/v1/convolution/with-synthetic-ir",
+            files={"audio": ("audio.wav", audio_bytes, "audio/wav")},
+            data={"t60_1000": "1.5", "duracion": "2.0"},
+        )
+        assert response.status_code == 200
+        assert "audio/wav" in response.headers["content-type"]
+
+    def test_convolucion_archivo_invalido_returns_422(self):
+        """Verifica que un archivo no valido retorna HTTP 422."""
+        response = client.post(
+            "/api/v1/convolution/with-ir",
+            files={
+                "audio": ("audio.txt", b"no es audio", "text/plain"),
+                "ri": ("ri.txt", b"no es audio", "text/plain"),
+            },
+        )
+        assert response.status_code == 422
 
 
 class TestUtilsEndpoints:
