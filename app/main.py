@@ -12,11 +12,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.routers import acoustics, analysis, convolution, filters, health, signals, utils
 
 app = FastAPI(
-    title="RIR-API",
+    title="RIR-API: MANOLI-DALLINGE",
     description=(
         "API REST para procesamiento y analisis de respuestas al impulso segun ISO 3382. "
-        "Incluye generacion de senales (M1), procesamiento de RI (M2) y "
-        "calculo de parametros acusticos EDT, T10, T20, T30, D50 y C80 (M3)."
+        "Incluye generacion de senales, procesamiento de RI, convolucion con audio y "
+        "calculo de parametros acusticos EDT, T10, T20, T30, D50 y C80."
     ),
     version="1.0.0",
 )
