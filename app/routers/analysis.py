@@ -18,7 +18,7 @@ router = APIRouter()
 async def analizar_ri(
     file: UploadFile = File(..., description="Archivo WAV con la respuesta al impulso"),  # noqa: B008
 ) -> dict:
-    """Analiza una RI y devuelve EDT, T10, T20, T30, D50 y C80 por banda de octava."""
+    """Analiza una RI y devuelve EDT, T10, T20, T30, D50, C80 y SNR por banda de octava."""
     try:
         ri, fs = cargar_audio(io.BytesIO(await file.read()))
     except Exception as e:

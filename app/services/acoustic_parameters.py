@@ -103,7 +103,10 @@ def regresion_lineal(x: np.ndarray, y: np.ndarray) -> tuple[float, float, float]
 
 
 def _calcular_tiempo(
-    edc: np.ndarray, t: np.ndarray, limite_sup: float, limite_inf: float,
+    edc: np.ndarray,
+    t: np.ndarray,
+    limite_sup: float,
+    limite_inf: float,
     r2_minimo: float = 0.8,
 ) -> float | None:
     """Calcula el tiempo de reverberacion extrapolando la pendiente de la EDC a -60 dB.
@@ -121,7 +124,7 @@ def _calcular_tiempo(
 
 
 def calcular_parametros_acusticos(
-    ri: np.ndarray, fs: int, usar_lundeby: bool = False
+    ri: np.ndarray, fs: int, usar_lundeby: bool = True
 ) -> dict[str, dict[float, float | None]]:
     """Calcula los parametros acusticos ISO 3382 por banda de octava.
 
@@ -137,7 +140,7 @@ def calcular_parametros_acusticos(
     usar_lundeby : bool, optional
         Si True, aplica el metodo de Lundeby para truncar la RI antes de
         calcular la integral de Schroeder. Util para RIs medidas con ruido
-        de fondo real. Por defecto False.
+        de fondo real. Por defecto True.
 
     Returns
     -------
@@ -162,6 +165,7 @@ def calcular_parametros_acusticos(
         "T30": {},
         "D50": {},
         "C80": {},
+        "SNR": {},
     }
 
     n_50ms = int(0.05 * fs)
@@ -172,10 +176,15 @@ def calcular_parametros_acusticos(
         energia = ri_banda**2
 
         if usar_lundeby:
-            idx_trunc, _ = metodo_lundeby(ri_banda, fs)
+            idx_trunc, nivel_ruido_db = metodo_lundeby(ri_banda, fs)
             ri_para_edc = ri_banda[:idx_trunc]
         else:
+            n_ruido = max(1, len(ri_banda) // 10)
+            nivel_ruido_db = 10.0 * np.log10(np.mean(ri_banda[-n_ruido:] ** 2) + _EPS)
             ri_para_edc = ri_banda
+
+        pico_db = 10.0 * np.log10(np.max(ri_banda**2) + _EPS)
+        resultado["SNR"][fc] = round(pico_db - nivel_ruido_db, 1)
 
         edc = integral_schroeder(ri_para_edc)
         t = np.arange(len(ri_para_edc)) / fs
