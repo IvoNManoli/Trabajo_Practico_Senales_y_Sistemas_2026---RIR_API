@@ -137,7 +137,8 @@ class TestReproducirYGrabar:
 
         tolerancia = int(n_esperado * 0.01)
         assert abs(len(resultado) - n_esperado) <= tolerancia, (
-            f"Duracion incorrecta: {len(resultado)} muestras, se esperaban {n_esperado} ± {tolerancia}"
+            f"Duracion incorrecta: {len(resultado)} muestras, "
+            f"se esperaban {n_esperado} ± {tolerancia}"
         )
 
     def test_error_sin_dispositivo(self):
@@ -145,6 +146,11 @@ class TestReproducirYGrabar:
         import sounddevice as sd
 
         signal = np.zeros(44100)
-        with patch("app.services.grabacion_utils.sd.playrec", side_effect=sd.PortAudioError("sin device")):
-            with pytest.raises(RuntimeError, match="No hay dispositivo de audio disponible"):
-                reproducir_y_grabar(signal, 44100, 2.0)
+        with (
+            patch(
+                "app.services.grabacion_utils.sd.playrec",
+                side_effect=sd.PortAudioError("sin device"),
+            ),
+            pytest.raises(RuntimeError, match="No hay dispositivo de audio disponible"),
+        ):
+            reproducir_y_grabar(signal, 44100, 2.0)

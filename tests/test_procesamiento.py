@@ -6,11 +6,15 @@ import tempfile
 import numpy as np
 import pytest
 import soundfile as sf
-
 from scipy.signal import butter, correlate, fftconvolve, freqz
 
 from app.services.filter import filtro_octava
-from app.services.signal_utils import a_escala_log, cargar_audio, obtener_ri_desde_sweep, sintetizar_ri
+from app.services.signal_utils import (
+    a_escala_log,
+    cargar_audio,
+    obtener_ri_desde_sweep,
+    sintetizar_ri,
+)
 from app.services.sine_sweep import generar_sine_sweep
 
 
@@ -185,7 +189,7 @@ class TestObtenerRIDesdeSweep:
         fs = 8000
         sweep, filtro_inverso = generar_sine_sweep(50, 3000, duracion=2.0, fs=fs)
 
-        # RI band-limited: burst senoidal a 1000 Hz con decaimiento (dentro del rango 50-3000 Hz del sweep)
+        # RI band-limited: burst senoidal a 1000 Hz con decaimiento (rango 50-3000 Hz del sweep)
         n_ri = int(0.5 * fs)
         t = np.arange(n_ri) / fs
         ri_orig = np.sin(2 * np.pi * 1000 * t) * np.exp(-5.0 * t)
