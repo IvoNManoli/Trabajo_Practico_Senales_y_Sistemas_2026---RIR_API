@@ -73,37 +73,3 @@ for nombre, ri, fs in ris:
     plt.savefig(out, dpi=150)
     plt.close()
     print("Guardado:", out)
-
-# Comparativa RI medida: con vs sin Lundeby
-params_con = calcular_parametros_acusticos(ri_proc, fs_proc, usar_lundeby=True)
-params_sin = calcular_parametros_acusticos(ri_proc, fs_proc, usar_lundeby=False)
-
-fig, axes = plt.subplots(1, 2, figsize=(20, 7), sharey=True)
-
-for ax, params, titulo in [
-    (axes[0], params_con, "RI medida — Con Lundeby"),
-    (axes[1], params_sin, "RI medida — Sin Lundeby"),
-]:
-    edt = [params["EDT"].get(float(fc)) for fc in BANDAS]
-    t10 = [params["T10"].get(float(fc)) for fc in BANDAS]
-    t20 = [params["T20"].get(float(fc)) for fc in BANDAS]
-    t30 = [params["T30"].get(float(fc)) for fc in BANDAS]
-
-    ax.plot(x, edt, marker="^", linestyle=":", label="EDT", color="#003f8a")
-    ax.plot(x, t10, marker="D", linestyle="-.", label="T10", color="#f5c400")
-    ax.plot(x, t20, marker="o", linestyle="--", label="T20", color="#f07800")
-    ax.plot(x, t30, marker="s", linestyle="-", label="T30", color="#c0000c")
-
-    ax.set_xticks(x)
-    ax.set_xticklabels(etiquetas)
-    ax.set_xlabel("Frecuencia central de banda [Hz]")
-    ax.set_ylabel("Tiempo de reverberación [s]")
-    ax.set_title(titulo)
-    ax.legend()
-    ax.grid(alpha=0.3)
-
-plt.tight_layout()
-out = os.path.join(OUT_DIR, "t30_ri_medida_comparativa_lundeby.png")
-plt.savefig(out, dpi=150)
-plt.close()
-print("Guardado:", out)
