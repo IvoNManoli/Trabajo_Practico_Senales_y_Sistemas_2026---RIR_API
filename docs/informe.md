@@ -40,31 +40,39 @@ El alcance del análisis de parámetros acústicos incluye las bandas de octava 
 
 ### 2.1 Ruido rosa (1/f)
 
-El ruido rosa tiene densidad espectral de potencia inversamente proporcional a la frecuencia:
+El ruido rosa se define como un ruido cuya energía por octava es constante. Eso implica que en las bandas más graves, al haber menos frecuencias, la energía por frecuencia sea mayor que en las bandas agudas. Es decir, puedo pensar que la "cantidad de energía por frecuencia" cae según aumenta la frecuencia. No obstante, en vez de energía se utiliza la potencia, dado que permite independizarnos del tiempo de integración (si integro en tiempos más largos, la energía es mayor, pero la potencia es la misma). 
 
-$$S(f) = \frac{k}{f}$$
+Como la potencia por frecuencia cae a medida que aumenta la frecuencia, podría deducirse la ecuación 1: 
 
-En escala logarítmica corresponde a una caída de exactamente **−3 dB por octava**:
+$$S(f) = \frac{k}{f}\tag{1}$$
 
-$$\Delta L = 10 \log_{10}\!\left(\frac{1}{2}\right) \approx -3{,}01 \text{ dB}$$
+Esa fórmula tiene su demostración física/matemática de mayor complejidad, pero sin entrar en detalles es  intuitivamente correcta. Al graficar el nivel de potencia en función de la frecuencia en eje logarítmico de frecuencia, observaremos una recta decreciente con una pendiente de -3 dB por octava. 
+
+En base a estos principios se desarrolló la función **"generar_ruido_rosa()"** que recibe como argumentos la duración deseada como objeto flotante y la frecuencia de muestreo objeto entero, y devuelve un array de Numpy con el ruido rosa. En cuanto al algoritmo, la metodología aplicada consistió en crear ruido blanco con distribución normal mediante una función de la librería Numpy. Posteriormente al array creado se le aplicó la transformada rápida de fourier (FFT) para convertir a un vector en el dominio frecuencial, donde cada argumento representa un número complejo y cada índice una frecuencia. También se creó un vector de frecuencias, para luego dividir al vector de la transformada por este vector de frecuencias y así aplicar la ecuación 1 para obtener un vector de ruido rosa. Finalmente se aplicó la transformada inversa para obtener nuevamente un array en el dominio temporal y además se le aplicó una normalización entre -0,8 y 0,8, liberando así un margen de seguridad para evitar cualquier tipo de distorsión digital.
 
 ### 2.2 Sine sweep logarítmico (Farina, 2000)
 
-La frecuencia instantánea crece exponencialmente con el tiempo:
+Para poder medir una respuesta al impulso en un recinto, sería tan sencillo como emitir un impulso perfecto en un recinto y medir su respuesta.
 
-$$f(t) = f_1 \cdot e^{\,t \ln(f_2/f_1)/T}$$
+El sine sweep es una señal que barre un rango de frecuencias a lo largo del tiempo, pensada para excitar toda la banda de interés en una sola medición. La pregunta es cómo debería crecer esa frecuencia con el tiempo. Si creciera de forma lineal (los mismos Hz por segundo todo el tiempo), el barrido pasaría el mismo tiempo absoluto en cada frecuencia — pero como las octavas agudas cubren muchos más Hz que las graves, terminaría dedicando mucho menos tiempo relativo a cada octava aguda que a cada octava grave. Esto es el mismo problema que el ruido blanco frente al rosa: un desbalance de energía por banda que después se traduce en peor relación señal/ruido justo en las bandas donde se necesita medir (125 Hz a 4 kHz, filtradas en octavas).
 
-La señal es:
+Por eso el barrido tiene que ser logarítmico: la frecuencia instantánea crece exponencialmente con el tiempo, de forma que el sweep pase exactamente el mismo tiempo dentro de cada octava, sea la de 20-40 Hz o la de 10000-20000 Hz (ecuación 2):
 
-$$x(t) = \sin\!\left[2\pi f_1 L \left(e^{t/L} - 1\right)\right], \quad L = \frac{T}{\ln(f_2/f_1)}$$
+$$f(t) = f_1 \cdot e^{\,t \ln(f_2/f_1)/T} \tag{2}$$
 
-El filtro inverso se construye invirtiendo temporalmente el sweep con corrección de amplitud:
+Integrando esa frecuencia instantánea se obtiene la fase de la señal, y de ahí la expresión completa del sweep (ecuación 3):
 
-$$x_{\text{inv}}(t) = \frac{x(T-t)}{A(t)}, \quad A(t) = e^{-t \ln(f_2/f_1)/T}$$
+$$x(t) = \sin\!\left[2\pi f_1 L \left(e^{t/L} - 1\right)\right], \quad L = \frac{T}{\ln(f_2/f_1)} \tag{3}$$
 
-La convolución sweep × filtro inverso converge a una delta de Dirac, permitiendo recuperar la RI del recinto:
+Para poder recuperar la respuesta al impulso de una sala a partir de la grabación del sweep, hace falta además un filtro inverso — una señal que, convolucionada con el sweep, dé como resultado un impulso. Se construye invirtiendo el sweep en el tiempo y aplicándole una corrección de amplitud que compensa el hecho de que las frecuencias bajas estuvieron sonando más tiempo que las altas (ecuación 4):
 
-$$y(t) * x_{\text{inv}}(t) \approx h(t)$$
+$$x_{\text{inv}}(t) = \frac{x(T-t)}{A(t)}, \quad A(t) = e^{-t \ln(f_2/f_1)/T} \tag{4}$$
+
+De esta manera, la convolución del sweep con su filtro inverso converge a una delta de Dirac, lo que en la práctica significa que convolucionar la *grabación* de una sala (sweep deformado por la RI del recinto) con ese mismo filtro inverso permite recuperar directamente la RI (ecuación 5):
+
+$$y(t) * x_{\text{inv}}(t) \approx h(t) \tag{5}$$
+
+En base a estos principios se desarrolló la función **`generar_sine_sweep()`**, que recibe como argumentos la frecuencia inicial y final del barrido como objetos flotantes, la duración deseada como objeto flotante y la frecuencia de muestreo como objeto entero, y devuelve dos arrays de Numpy: el sweep y su filtro inverso. El algoritmo arma primero un vector de tiempo con `np.linspace`, calcula la constante $L$ de la ecuación 3 y a partir de ahí la fase instantánea, para finalmente aplicarle el seno y obtener el barrido. El filtro inverso se obtiene invirtiendo el array del sweep (`sweep[::-1]`) y multiplicándolo por una rampa exponencial decreciente que implementa la corrección de amplitud $A(t)$ de la ecuación 4, normalizando después a un pico de 1.0. Por último, tanto el sweep como su filtro inverso se multiplican por una ganancia de 0.5 (headroom de −6 dB) para evitar clipping al reproducirlos por hardware real.
 
 ### 2.3 Filtros de banda de octava (IEC 61260)
 
