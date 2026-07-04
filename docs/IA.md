@@ -269,6 +269,63 @@
 
 ---
 
+---
+
+### Sesión 2 — 03/07/2026 (Claude Code en VS Code)
+
+**Herramienta:** Claude Code (claude-sonnet-4-6, extensión VS Code)
+
+---
+
+**1. Cambiar el default de `usar_lundeby` a `True`**
+
+- *Prompt:* Fijate que tenemos la función `metodo_lundeby`, `calcular_parametros_acusticos` debería usarla por defecto.
+- *Respuesta:* Se cambió `usar_lundeby: bool = False` a `usar_lundeby: bool = True` en la firma de `calcular_parametros_acusticos` y se actualizó el docstring. 19/19 tests en verde.
+
+---
+
+**2. Prueba de envolvente de Hilbert por banda — `prueba_hilbert.py`**
+
+- *Prompt:* Me gustaría usar Hilbert para visualizar la envolvente de las RIs. Para eso primero debería filtrar las RI en alguna banda. Hagamos esa prueba con todas las bandas de Elveden Hall en subplots.
+- *Respuesta:* Se creó `docs/m2/prueba_hilbert.py` que filtra `elveden_hall.wav` por las 6 bandas (125–4000 Hz) con `filtro_octava`, aplica `suavizar_signal(..., 'hilbert')` y genera un subplot 3×2. Los gráficos muestran la envolvente de Hilbert con sus fluctuaciones características, y la diferencia de decaimiento entre bandas es claramente visible.
+
+---
+
+**3. Ajustes de visualización en `prueba_hilbert.py`**
+
+- *Prompt (iterativo):* Volvamos al estado inicial de Hilbert pero con solo las bandas de 500 Hz, 4 kHz y 16 kHz en tres gráficos separados. Luego: xlim hasta 4 s. Luego: agrandar los gráficos y sumar un gráfico de la RI procesada en 4 kHz. Luego: la RI procesada hasta 0.4 s. Luego: agrandar todos los gráficos.
+- *Respuesta:* Se reescribió el script iterativamente produciendo cuatro archivos PNG: `hilbert_500hz.png`, `hilbert_4000hz.png`, `hilbert_16000hz.png` y `hilbert_procesada_4000hz.png`. Tamaño final: `figsize=(18, 7)`. La comparación entre Elveden Hall y la RI medida a 4 kHz muestra la diferencia de reverberación entre una sala grande y un espacio pequeño.
+
+---
+
+**4. Agregar SNR al endpoint de parámetros acústicos**
+
+- *Prompt:* Me gustaría que se informe también la relación señal-ruido en el endpoint de calcular parámetros acústicos, para saber si es lo suficientemente buena como para considerar T30.
+- *Respuesta:* Se agregó `"SNR": {}` al dict de resultado en `calcular_parametros_acusticos`. La SNR se calcula por banda como `pico_db - nivel_ruido_db` (ambos en dB): `pico_db = 10·log10(max(ri_banda²))` y `nivel_ruido_db` viene de `metodo_lundeby` cuando `usar_lundeby=True`, o se estima con el último 10% de la señal en caso contrario. Se actualizó también el docstring del router `/api/v1/analysis/impulse-response`. 19/19 tests en verde.
+
+---
+
+**5. Gráficos de tiempos de reverberación por banda — `graficar_t30.py`**
+
+- *Prompt:* Generá un script en `docs/m3` que tome las RIs de Elveden Hall, Maes Howe y la RI medida, y genere un gráfico para cada una con frecuencia en el eje X y tiempo de reverberación en el eje Y, hasta 4 kHz, usando solo las frecuencias centrales de cada banda de octava.
+- *Respuesta:* Se creó `docs/m3/graficar_t30.py` que calcula EDT, T10, T20 y T30 con `calcular_parametros_acusticos` y genera un PNG por sala con `figsize=(16, 7)`. Colores: EDT azul oscuro (`#003f8a`), T10 amarillo (`#f5c400`), T20 naranja (`#f07800`), T30 rojo (`#c0000c`). Produce `t30_elveden_hall.png`, `t30_maes_howe.png` y `t30_ri_medida.png`.
+
+---
+
+**6. Comparativa con/sin Lundeby para la RI medida (descartada)**
+
+- *Prompt:* Podemos hacer la comparativa de ese gráfico de RI medida sin Lundeby? Y también para Elveden Hall en archivos separados.
+- *Respuesta:* Se generaron los gráficos comparativos. Los resultados fueron prácticamente idénticos con y sin Lundeby en ambas RIs, porque las señales ya tenían poco o nulo ruido de fondo tras el procesamiento previo. Se descartaron: se eliminaron los archivos PNG generados y se removió el bloque del script.
+
+---
+
+**7. Mover archivos de validación a `tablas_validacion/`**
+
+- *Prompt:* A los archivos de validación de M3 (txt y csv), pasalos a una carpeta `tablas_validacion`.
+- *Respuesta:* Se creó `docs/m3/tablas_validacion/` y se movieron los 5 archivos con `git mv`, quedando staged como `renamed` para el próximo commit.
+
+---
+
 ## Pendiente para próximas sesiones
 
 - Crear y pushear el tag `v0.2.0` en main

@@ -10,8 +10,8 @@ Formato REW (V5.20.13) — columnas por indice al hacer split():
 "Zero Phase" ocupa dos indices, por eso C80 queda en 16 y D50 en 17.
 
 Uso:
-    uv run python docs/m3/comparar_rew_vs_api.py \\
-        docs/m3/"(REW)RT60_ri_sintetica_t60_1.5s.txt" \\
+    uv run python docs/m3/scripts/comparar_rew_vs_api.py \\
+        docs/m3/tablas_validacion/"(REW)RT60_ri_sintetica_t60_1.5s.txt" \\
         docs/m3/ri_sintetica_t60_1.5s.wav
 """
 
@@ -21,14 +21,11 @@ from pathlib import Path
 
 import numpy as np
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 from app.services.acoustic_parameters import calcular_parametros_acusticos  # noqa: E402
 from app.services.signal_utils import cargar_audio  # noqa: E402
 
 BANDAS = [125, 250, 500, 1000, 2000, 4000]
-
-# Indices en la linea de datos de REW (split por espacio)
-_IDX = {"freq": 0, "EDT": 2, "T20": 4, "T30": 6, "C80": 16, "D50": 17}
 
 # Parametros a comparar: (nombre_api, nombre_rew, unidad, tolerancia_consigna)
 PARAMS = [
@@ -45,7 +42,13 @@ PARAMS = [
 # ---------------------------------------------------------------------------
 
 def parsear_rew_txt(ruta: Path) -> dict[int, dict[str, float]]:
-    """Extrae la seccion 'Octave filtered data' del archivo REW.
+    """Extrae las filas de octava (BW "1/1") del archivo REW.
+
+    No depende de la linea de seccion "Octave filtered data": algunas
+    versiones de REW (p. ej. V5.31.3) no la incluyen. Tampoco asume que
+    la columna de fase ("Zero Phase", "Forward", "Reverse") ocupe una
+    cantidad fija de palabras: C50/C80/D50/TS se leen contando desde el
+    final de la linea en lugar de por indice fijo.
 
     Parameters
     ----------
@@ -58,26 +61,15 @@ def parsear_rew_txt(ruta: Path) -> dict[int, dict[str, float]]:
         {frecuencia_hz: {"EDT": ..., "T20": ..., "T30": ..., "C80": ..., "D50": ...}}
     """
     resultado: dict[int, dict[str, float]] = {}
-    en_seccion = False
 
     with open(ruta, encoding="utf-8", errors="replace") as f:
         for linea in f:
-            linea = linea.rstrip()
-
-            if linea == "Octave filtered data":
-                en_seccion = True
-                continue
-            if linea == "One-third octave filtered data":
-                break
-            if not en_seccion or not linea:
-                continue
-
             partes = linea.split()
-            if len(partes) < 18:
+            if len(partes) < 17 or partes[1] != "1/1":
                 continue
 
             try:
-                freq = int(partes[_IDX["freq"]])
+                freq = int(partes[0])
             except ValueError:
                 continue
 
@@ -85,8 +77,11 @@ def parsear_rew_txt(ruta: Path) -> dict[int, dict[str, float]]:
                 continue
 
             resultado[freq] = {
-                nombre: float(partes[_IDX[nombre]])
-                for nombre in ("EDT", "T20", "T30", "C80", "D50")
+                "EDT": float(partes[2]),
+                "T20": float(partes[4]),
+                "T30": float(partes[6]),
+                "C80": float(partes[-3]),
+                "D50": float(partes[-2]),
             }
 
     return resultado

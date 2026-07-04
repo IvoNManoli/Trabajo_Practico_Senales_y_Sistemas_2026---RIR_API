@@ -1,3 +1,19 @@
+"""Genera los graficos de validacion del Milestone 2.
+
+Ejecutar desde la raiz del proyecto:
+    uv run python docs/m2/scripts/generate_m2.py
+
+Genera en docs/m2/imagenes/:
+    - elveden_hall_ir.png, maes_howe_ir.png (envolvente de las RIs de OpenAIR)
+    - respuesta_filtros.png (respuesta en frecuencia de filtro_octava, IEC 61260)
+    - ri_medida_completa.png, ri_medida_completa_onset.png,
+      ri_medida_piso_ruido.png, ri_medida_procesada.png (RI propia medida
+      con medir_ri.py, tomada de docs/m2/mediciones/)
+
+Requiere elveden_hall.wav y maes_howe.wav en docs/m2/elveden_hall/ y
+docs/m2/maes_howe/ respectivamente (no versionados, ver .gitignore).
+"""
+
 import os
 import sys
 
@@ -9,7 +25,7 @@ from scipy.signal import butter, sosfreqz
 # FIX PATH (ROOT DEL PROYECTO)
 # =========================
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-ROOT_DIR = os.path.abspath(os.path.join(SCRIPT_DIR, "../.."))
+ROOT_DIR = os.path.abspath(os.path.join(SCRIPT_DIR, "../../.."))
 sys.path.insert(0, ROOT_DIR)
 
 import soundfile as sf
@@ -23,9 +39,9 @@ FS_REF = 44100
 # =========================
 # CARPETAS OUTPUT
 # =========================
-out_elv = os.path.join(SCRIPT_DIR, "elveden_hall")
-out_mae = os.path.join(SCRIPT_DIR, "maes_howe")
-out_img = os.path.join(SCRIPT_DIR, "imagenes")
+out_elv = os.path.join(SCRIPT_DIR, "../elveden_hall")
+out_mae = os.path.join(SCRIPT_DIR, "../maes_howe")
+out_img = os.path.join(SCRIPT_DIR, "../imagenes")
 
 os.makedirs(out_elv, exist_ok=True)
 os.makedirs(out_mae, exist_ok=True)
@@ -133,7 +149,7 @@ print("OK Guardado:", out_file)
 # =========================
 # RI MEDIDA — completa y procesada
 # =========================
-mediciones_dir = os.path.join(SCRIPT_DIR, "mediciones")
+mediciones_dir = os.path.join(SCRIPT_DIR, "../mediciones")
 
 archivos_full = sorted(
     [f for f in os.listdir(mediciones_dir) if f.startswith("ri_completa_")],
