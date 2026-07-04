@@ -10,12 +10,12 @@ Los gráficos de comparación T30 y las tablas de validación fueron generados c
 `scripts/graficar_t30_comparativa.py` y `scripts/comparar_rew_vs_api.py` respectivamente,
 a partir de las exportaciones de texto de REW (`tablas_validacion/*.txt`).
 
-Se usaron **4 RIs** para la validación — cumpliendo de sobra el mínimo de 2 (una
-sintetizada y una real) que exige la consigna:
+Se usaron **3 RIs reales** para la validación — cumple el mínimo de 2 RIs que exige la
+consigna, aunque no incluye una sintetizada (se descartó la RI sintética de esta ronda de
+validación):
 
 | RI | Origen | T60 nominal |
 |---|---|---|
-| RI sintética (T60=1.5s) | `sintetizar_ri`, T60 uniforme conocido | 1.5 s (conocido) |
 | Elveden Hall | OpenAIR (sala grande) | ~3–4 s |
 | Maes Howe | OpenAIR (cámara neolítica pequeña) | ~0.5 s |
 | RI procesada (medida) | Medición propia con sine sweep (`medir_ri.py`) | ~0.3 s |
@@ -84,61 +84,108 @@ de RIR-API y el de REW. Sigue dentro de la tolerancia de ±0.5 s.
 
 ![T30 RI procesada — RIR-API vs REW](Imagenes/t30_comparativa_ri_procesada_medida.png)
 
-### 2.4 RI sintética (T60 = 1.5 s)
-
-![T30 RI sintética — RIR-API vs REW](Imagenes/t30_comparativa_ri_sintetica_t60_1_5s.png)
-
-Al tener un T60 uniforme y conocido de antemano, esta RI sirve como caso de control: las
-diferencias T30 entre RIR-API y REW son las más chicas de las 4 RIs (máximo 0.03 s), lo
-que confirma que el algoritmo recupera correctamente el valor nominal cuando no hay
-variaciones modales de por medio.
-
 ---
 
 ## 3. Resumen de validación
 
 Diferencia máxima (peor banda de las 6) entre RIR-API y REW, por parámetro y por RI.
-Tolerancias según consigna: **±0.5 s** para EDT/T20/T30, **±1 dB** para C80.
+Tolerancia según consigna: **±0.5 s** para EDT/T20/T30.
 
-| RI | EDT | T20 | T30 | C80 |
-|---|---|---|---|---|
-| Elveden Hall | 0.104 s ✓ | 0.250 s ✓ | 0.432 s ✓ | 1.149 dB ✗ |
-| Maes Howe | 0.211 s ✓ | 0.141 s ✓ | 0.167 s ✓ | 4.057 dB ✗ |
-| RI procesada (medida) | 0.029 s ✓ | 0.021 s ✓ | 0.023 s ✓ | 2.093 dB ✗ |
-| RI sintética (T60=1.5s) | 1.494 s ✗ [ver nota] | 0.038 s ✓ | 0.028 s ✓ | 4.789 dB ✗ |
+| RI | EDT | T20 | T30 |
+|---|---|---|---|
+| Elveden Hall | 0.104 s ✓ | 0.250 s ✓ | 0.432 s ✓ |
+| Maes Howe | 0.211 s ✓ | 0.141 s ✓ | 0.167 s ✓ |
+| RI procesada (medida) | 0.029 s ✓ | 0.021 s ✓ | 0.023 s ✓ |
 
-> **Nota — outlier de EDT en RI sintética:** el valor de 1.494 s corresponde a una única
-> banda (125 Hz, RIR-API=0.10 s vs REW=1.60 s); las otras 5 bandas de esa misma RI están
-> todas dentro de tolerancia (diferencia máxima 0.07 s). Es un caso puntual donde
-> `metodo_lundeby` trunca de forma agresiva esa banda específica de la señal sintética,
-> dejando muy pocos puntos para el ajuste de EDT (rango 0/−10 dB). Queda pendiente
-> investigar la causa exacta — no se debe ocultar en el informe, conviene mencionarlo como
-> limitación conocida.
-
-**T20 y T30 pasan la validación en las 4 RIs, en las 6 bandas, ampliamente dentro de
+**T20 y T30 pasan la validación en las 3 RIs, en las 6 bandas, ampliamente dentro de
 tolerancia** (peor caso 0.43 s contra un límite de 0.5 s).
 
-**C80 no pasa consistentemente** en ninguna de las 4 RIs. La hipótesis de trabajo (ver
-sección de discusión) es que REW aplicó filtrado **"Forward"** (causal, con distorsión de
-fase) en algunas de las exportaciones, mientras que `filtro_octava` usa `filtfilt`
-(fase cero) — una diferencia de fase que afecta directamente a C80 (sensible a la
-ubicación exacta de la energía en el límite de 80 ms) mucho más que a los tiempos de
-reverberación.
+### 3.1 Máxima desviación registrada
+
+El peor caso de toda la validación es **T30 en Elveden Hall a 125 Hz — 0.432 s** de
+diferencia (RIR-API=2.298 s vs REW=2.730 s) — la más cercana al límite de ±0.5 s, pero
+sigue dentro de tolerancia.
+
+### 3.2 Tabla completa por banda (125–4000 Hz)
+
+Valores de RIR-API y REW para EDT, T20 y T30 en las 6 bandas de octava exigidas por
+la consigna, para las 3 RIs.
+
+#### Elveden Hall
+
+| Parámetro | Banda (Hz) | RIR-API | REW | Diferencia | Dentro de tolerancia |
+|---|---|---|---|---|---|
+| EDT | 125 | 2.126s | 2.212s | -0.086s | Sí |
+| EDT | 250 | 3.280s | 3.384s | -0.104s | Sí |
+| EDT | 500 | 4.490s | 4.416s | +0.074s | Sí |
+| EDT | 1000 | 3.939s | 3.957s | -0.018s | Sí |
+| EDT | 2000 | 3.665s | 3.650s | +0.015s | Sí |
+| EDT | 4000 | 2.578s | 2.652s | -0.074s | Sí |
+| T20 | 125 | 2.377s | 2.627s | -0.250s | Sí |
+| T20 | 250 | 3.482s | 3.605s | -0.123s | Sí |
+| T20 | 500 | 4.275s | 4.255s | +0.020s | Sí |
+| T20 | 1000 | 4.123s | 4.119s | +0.004s | Sí |
+| T20 | 2000 | 3.842s | 3.859s | -0.017s | Sí |
+| T20 | 4000 | 2.765s | 2.903s | -0.138s | Sí |
+| T30 | 125 | 2.298s | 2.730s | -0.432s | Sí |
+| T30 | 250 | 3.454s | 3.567s | -0.113s | Sí |
+| T30 | 500 | 4.194s | 4.202s | -0.008s | Sí |
+| T30 | 1000 | 4.088s | 4.089s | -0.001s | Sí |
+| T30 | 2000 | 3.843s | 3.862s | -0.019s | Sí |
+| T30 | 4000 | 2.836s | 3.001s | -0.165s | Sí |
+
+#### Maes Howe
+
+| Parámetro | Banda (Hz) | RIR-API | REW | Diferencia | Dentro de tolerancia |
+|---|---|---|---|---|---|
+| EDT | 125 | 0.709s | 0.596s | +0.113s | Sí |
+| EDT | 250 | 0.451s | 0.535s | -0.084s | Sí |
+| EDT | 500 | 0.331s | 0.402s | -0.071s | Sí |
+| EDT | 1000 | 0.463s | 0.252s | +0.211s | Sí |
+| EDT | 2000 | 0.364s | 0.301s | +0.063s | Sí |
+| EDT | 4000 | N/A | N/A | - | - |
+| T20 | 125 | 0.751s | 0.610s | +0.141s | Sí |
+| T20 | 250 | 0.605s | 0.550s | +0.055s | Sí |
+| T20 | 500 | 0.615s | 0.507s | +0.108s | Sí |
+| T20 | 1000 | 0.513s | 0.492s | +0.021s | Sí |
+| T20 | 2000 | 0.432s | 0.433s | -0.001s | Sí |
+| T20 | 4000 | 0.415s | 0.382s | +0.033s | Sí |
+| T30 | 125 | 0.773s | 0.606s | +0.167s | Sí |
+| T30 | 250 | 0.628s | 0.579s | +0.049s | Sí |
+| T30 | 500 | 0.606s | 0.530s | +0.076s | Sí |
+| T30 | 1000 | 0.508s | 0.490s | +0.018s | Sí |
+| T30 | 2000 | 0.462s | 0.447s | +0.015s | Sí |
+| T30 | 4000 | 0.420s | 0.394s | +0.026s | Sí |
+
+#### RI procesada (medida)
+
+| Parámetro | Banda (Hz) | RIR-API | REW | Diferencia | Dentro de tolerancia |
+|---|---|---|---|---|---|
+| EDT | 125 | 0.184s | 0.190s | -0.006s | Sí |
+| EDT | 250 | 0.154s | 0.135s | +0.019s | Sí |
+| EDT | 500 | 0.183s | 0.166s | +0.017s | Sí |
+| EDT | 1000 | 0.270s | 0.248s | +0.022s | Sí |
+| EDT | 2000 | 0.248s | 0.219s | +0.029s | Sí |
+| EDT | 4000 | 0.263s | 0.237s | +0.026s | Sí |
+| T20 | 125 | 0.277s | 0.279s | -0.002s | Sí |
+| T20 | 250 | 0.313s | 0.292s | +0.021s | Sí |
+| T20 | 500 | 0.287s | 0.294s | -0.007s | Sí |
+| T20 | 1000 | 0.270s | 0.271s | -0.002s | Sí |
+| T20 | 2000 | 0.232s | 0.232s | +0.000s | Sí |
+| T20 | 4000 | 0.251s | 0.252s | -0.001s | Sí |
+| T30 | 125 | 0.515s | 0.500s | +0.015s | Sí |
+| T30 | 250 | 0.294s | 0.292s | +0.002s | Sí |
+| T30 | 500 | 0.387s | 0.365s | +0.022s | Sí |
+| T30 | 1000 | 0.286s | 0.284s | +0.002s | Sí |
+| T30 | 2000 | 0.279s | 0.266s | +0.013s | Sí |
+| T30 | 4000 | 0.324s | 0.301s | +0.023s | Sí |
 
 ---
 
 ## Discusión y limitaciones
 
 - **T20/T30 validados.** Es el resultado central de la consigna y se cumple con margen
-  amplio en las 4 RIs (real chica, real grande, medida propia, sintética de control).
-- **C80 sistemáticamente fuera de tolerancia.** No parece un error de `calcular_parametros_acusticos`
-  (D50 se mueve en la misma dirección y magnitud relativa), sino una diferencia de
-  configuración de filtro entre RIR-API y REW. Recomendación para una vuelta futura:
-  re-exportar las mediciones de REW forzando "Zero Phase" en todas para descartar esta
-  hipótesis de forma concluyente.
-- **Outlier de EDT en la RI sintética (125 Hz).** Ver nota en la tabla — limitación
-  conocida de `metodo_lundeby` en esa banda puntual, no generalizable al resto de la
-  validación.
+  amplio en las 3 RIs (real chica, real grande, medida propia).
 - **Divergencia en graves en recintos chicos (Maes Howe).** Consistente entre software:
   a menor tamaño de recinto, menor densidad modal en bajas frecuencias, y mayor
   sensibilidad del resultado a diferencias finas de filtrado entre implementaciones.

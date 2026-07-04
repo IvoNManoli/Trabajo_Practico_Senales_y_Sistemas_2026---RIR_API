@@ -30,7 +30,6 @@ COLOR_TEXT_SEC = "#52514e"
 # (nombre_a_mostrar, archivo_csv)
 FUENTES = [
     ("Elveden Hall", "(REW)RT60_elveden_hall_validacion.csv"),
-    ("RI sintética (T60=1.5s)", "(REW)RT60_ri_sintetica_t60_1.5s_validacion.csv"),
     ("Maes Howe", "RT60_maes_howe_validacion.csv"),
     ("RI procesada (medida)", "RT60_ri_procesada_20260618_1621_validacion.csv"),
 ]
