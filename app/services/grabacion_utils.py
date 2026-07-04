@@ -31,7 +31,9 @@ def reproducir_y_grabar(
     Returns
     -------
     np.ndarray
-        Senal grabada como array 1D (incluye el preroll al inicio).
+        Senal grabada como array 1D (incluye el preroll al inicio). La
+        grabacion siempre es mono (1 microfono), independientemente de si
+        la senal reproducida es mono o estereo.
 
     Raises
     ------
@@ -44,25 +46,24 @@ def reproducir_y_grabar(
     n_padding = max(0, n_grabacion - n_senal - n_preroll)
 
     if signal.ndim == 1:
-        n_channels = 1
         senal_extendida = np.concatenate([
             np.zeros(n_preroll),
             signal,
             np.zeros(n_padding),
         ])
     else:
-        n_channels = signal.shape[1]
+        n_channels_salida = signal.shape[1]
         senal_extendida = np.vstack([
-            np.zeros((n_preroll, n_channels)),
+            np.zeros((n_preroll, n_channels_salida)),
             signal,
-            np.zeros((n_padding, n_channels)),
+            np.zeros((n_padding, n_channels_salida)),
         ])
 
     try:
         datos_capturados = sd.playrec(
             senal_extendida,
             samplerate=fs,
-            channels=n_channels,
+            channels=1,
             blocking=True,
         )
         sd.wait()
