@@ -2,7 +2,7 @@
 ## Señales y Sistemas · UNTREF · 2026
 
 **Integrantes:**
-- Ivo Manoli (legajo 64189) — procesamiento de RI y análisis acústico
+- Ivo Manoli (legajo 64189) — Generación y procesamiento de RI
 - Gaspar Dallinge (legajo 62751) — testing/CI y documentación
 
 ---
@@ -48,23 +48,24 @@ $$S(f) = \frac{k}{f}\tag{1}$$
 
 Esa fórmula tiene su demostración física/matemática de mayor complejidad, pero sin entrar en detalles es  intuitivamente correcta. Al graficar el nivel de potencia en función de la frecuencia en eje logarítmico de frecuencia, observaremos una recta decreciente con una pendiente de -3 dB por octava. 
 
-En base a estos principios se desarrolló la función **"generar_ruido_rosa()"** que recibe como argumentos la duración deseada como objeto flotante y la frecuencia de muestreo objeto entero, y devuelve un array de Numpy con el ruido rosa. En cuanto al algoritmo, la metodología aplicada consistió en crear ruido blanco con distribución normal mediante una función de la librería Numpy. Posteriormente al array creado se le aplicó la transformada rápida de fourier (FFT) para convertir a un vector en el dominio frecuencial, donde cada argumento representa un número complejo y cada índice una frecuencia. También se creó un vector de frecuencias, para luego dividir al vector de la transformada por este vector de frecuencias y así aplicar la ecuación 1 para obtener un vector de ruido rosa. Finalmente se aplicó la transformada inversa para obtener nuevamente un array en el dominio temporal y además se le aplicó una normalización entre -0,8 y 0,8, liberando así un margen de seguridad para evitar cualquier tipo de distorsión digital.
 
 ### 2.2 Sine sweep logarítmico (Farina, 2000)
 
-Para poder medir una respuesta al impulso en un recinto, sería tan sencillo como emitir un impulso perfecto en un recinto y medir su respuesta.
+Para poder medir una respuesta al impulso en un recinto, sería tan sencillo como emitir un impulso perfecto en un recinto y medir su respuesta. El problema es que físicamente es imposible obtener un impulso perfecto. Frente a esa imperfección surgen distintas soluciones como por ejemplo utilizar la respuesta de una explosión (como un globo) o un disparo. El problema de este tipo de métodos es que no son replicables y son demasiado variables según el tipo de estímulo y material utilizado, entre otros factores. Otro tipo de solución podría ser utilizar ruido rosa mediante un sistema de reproducción, y obtener la respuesta al impulso utilizando funciones de transferencia, pero las distorsiones propias del sistema también variarían mucho los resultados. Quién pudo brindar una mejor aproximación al impulso fue Farina, quien en el año 2000 presentó su método del sine sweep logarítmico y el filtro inverso.
 
-El sine sweep es una señal que barre un rango de frecuencias a lo largo del tiempo, pensada para excitar toda la banda de interés en una sola medición. La pregunta es cómo debería crecer esa frecuencia con el tiempo. Si creciera de forma lineal (los mismos Hz por segundo todo el tiempo), el barrido pasaría el mismo tiempo absoluto en cada frecuencia — pero como las octavas agudas cubren muchos más Hz que las graves, terminaría dedicando mucho menos tiempo relativo a cada octava aguda que a cada octava grave. Esto es el mismo problema que el ruido blanco frente al rosa: un desbalance de energía por banda que después se traduce en peor relación señal/ruido justo en las bandas donde se necesita medir (125 Hz a 4 kHz, filtradas en octavas).
+El sine sweep (barrido senoidal) es una señal senoidal que aumenta gradualmente su frecuencia a lo largo del tiempo, pensada para excitar toda la banda de interés en una sola medición. Dicha señal comienza en las frecuencias graves y se desplaza hasta las frecuencias agudas, mientras que su filtro inverso es la inversión temporal de este barrido. Farina demostró matemáticamente que la convolución entre ese barrido y su filtro inverso es una aproximación al impulso, siempre que ambas señales senan lo suficientemente largas (Farina, 2000). 
 
-Por eso el barrido tiene que ser logarítmico: la frecuencia instantánea crece exponencialmente con el tiempo, de forma que el sweep pase exactamente el mismo tiempo dentro de cada octava, sea la de 20-40 Hz o la de 10000-20000 Hz (ecuación 2):
+Por diversos factores, es conveniente que el barrido sea logarítmico, es decir, que invierta el mismo tiempo por cada banda. Por ejemplo, si el tiempo por banda son 5 segundos, se demoraría 5 segundos en desplazarse desde la frecuencia de 100 a 200 hz y el mismo tiempo entre 5000 y 10000 hz. En la ecuacion 2 se puede observar la fórmula que establece la frecuencia instantánea del barrido, donde f1 y f2 son las frecuencias iniciales y finales, respectivamente (por interés acústico de 20 Hz a 20 kHz), T es la duración total del sweep, y t es el valor de tiempo en el instante a evaluar:
+
 
 $$f(t) = f_1 \cdot e^{\,t \ln(f_2/f_1)/T} \tag{2}$$
+
 
 Integrando esa frecuencia instantánea se obtiene la fase de la señal, y de ahí la expresión completa del sweep (ecuación 3):
 
 $$x(t) = \sin\!\left[2\pi f_1 L \left(e^{t/L} - 1\right)\right], \quad L = \frac{T}{\ln(f_2/f_1)} \tag{3}$$
 
-Para poder recuperar la respuesta al impulso de una sala a partir de la grabación del sweep, hace falta además un filtro inverso — una señal que, convolucionada con el sweep, dé como resultado un impulso. Se construye invirtiendo el sweep en el tiempo y aplicándole una corrección de amplitud que compensa el hecho de que las frecuencias bajas estuvieron sonando más tiempo que las altas (ecuación 4):
+Tal como se mencionó, para poder recuperar la respuesta al impulso de una sala a partir de la grabación del sweep, hace falta además su filtro inverso, una señal que, convolucionada con el sweep, dé como resultado un impulso. Se construye invirtiendo el sweep en el tiempo y aplicándole una corrección de amplitud que compensa el hecho de que las frecuencias bajas estuvieron sonando más tiempo que las altas (ecuación 4):
 
 $$x_{\text{inv}}(t) = \frac{x(T-t)}{A(t)}, \quad A(t) = e^{-t \ln(f_2/f_1)/T} \tag{4}$$
 
@@ -72,50 +73,60 @@ De esta manera, la convolución del sweep con su filtro inverso converge a una d
 
 $$y(t) * x_{\text{inv}}(t) \approx h(t) \tag{5}$$
 
-En base a estos principios se desarrolló la función **`generar_sine_sweep()`**, que recibe como argumentos la frecuencia inicial y final del barrido como objetos flotantes, la duración deseada como objeto flotante y la frecuencia de muestreo como objeto entero, y devuelve dos arrays de Numpy: el sweep y su filtro inverso. El algoritmo arma primero un vector de tiempo con `np.linspace`, calcula la constante $L$ de la ecuación 3 y a partir de ahí la fase instantánea, para finalmente aplicarle el seno y obtener el barrido. El filtro inverso se obtiene invirtiendo el array del sweep (`sweep[::-1]`) y multiplicándolo por una rampa exponencial decreciente que implementa la corrección de amplitud $A(t)$ de la ecuación 4, normalizando después a un pico de 1.0. Por último, tanto el sweep como su filtro inverso se multiplican por una ganancia de 0.5 (headroom de −6 dB) para evitar clipping al reproducirlos por hardware real.
 
 ### 2.3 Filtros de banda de octava (IEC 61260)
 
-Las frecuencias de corte de un filtro de octava centrado en $f_c$ son:
+Por definición, las frecuencias de corte de un filtro de octava centrado en $f_c$ se aprecian en las ecuaciones 6 y 7:
 
-$$f_{\text{inf}} = \frac{f_c}{\sqrt{2}}, \quad f_{\text{sup}} = f_c \cdot \sqrt{2}$$
+$$f_{\text{inf}} = \frac{f_c}{\sqrt{2}} \tag{6}$$
+
+$$f_{\text{sup}} = f_c \cdot \sqrt{2} \tag{7}$$
+
+En metodología se explicará en más detalle de qué manera fueron implementados los filtros.
 
 ### 2.4 Integral de Schroeder (Energy Decay Curve)
 
-La integral de Schroeder representa el decaimiento de energía acústica mediante integración inversa:
+La integral de Schroeder representa el decaimiento de energía acústica mediante integración inversa (ecuación 8). La ecuación 9 indica el análogo discreto:
 
-$$E(t) = \int_{t}^{\infty} h^2(\tau) \, d\tau \quad \Rightarrow \quad E[n] = \sum_{k=n}^{N-1} h^2[k]$$
+$$E(t) = \int_{t}^{\infty} h^2(\tau) \, d\tau \tag{8}$$
 
-La curva de decaimiento normalizada en dB:
+$$E[n] = \sum_{k=n}^{N-1} h^2[k] \tag{9}$$
 
-$$L[n] = 10 \log_{10}\!\left(\frac{E[n]}{E[0]}\right)$$
+Consiste en una integración desde el final de la energía de la señal hasta el principio, que da como como resultado una gráfica de energía en función del tiempo. Es particularmente útil dado que teóricamente, la caída de la energía de la señal luego del impulso debería ser exponencialmente decreciente, por lo que al tomar el nivel de la energía el resultado teórico ideal sería una recta perfecta decreciente. En la vida real esto no ocurre, o por lo menos no de esta manera perfecta. No obstante, si se puede observar un tramo lineal antes de llegar al piso de ruido, que para una señal real puede ajustarse por cuadrados mínimos para así obtener los valores de EDT, T10, T20, T30 y T60. 
+
 
 ### 2.5 Parámetros acústicos ISO 3382
 
-Los tiempos de reverberación se calculan ajustando una recta por mínimos cuadrados a distintos rangos de la curva de Schroeder y extrapolando a −60 dB:
+Tal como se mencionó previamente, ajustando la curva de Schroeder se obtienen los parámetros acústicos temporales. Por diversas demostraciones físicas y cálculos acústicos es necesario conocer el tiempo que una señal tarda en caer 60 dB en el recinto, pero como es muy difícil y poco práctico obtener un impulso que permita una caída de -60 dB, este valor normalmente se obtiene por extrapolación de la recta ajustada a la curva de schroeder. La siguiente tabla indica entre qué valores se ajusta la recta de cada parámetro:
 
-| Parámetro | Rango de ajuste | Fórmula |
-|-----------|:---------------:|---------|
-| EDT | 0 dB a −10 dB | $\text{EDT} = -60 / m_{0,-10}$ |
-| T10 | −5 dB a −15 dB | $T_{10} = -60 / m_{-5,-15}$ |
-| T20 | −5 dB a −25 dB | $T_{20} = -60 / m_{-5,-25}$ |
-| T30 | −5 dB a −35 dB | $T_{30} = -60 / m_{-5,-35}$ |
+| Parámetro | Rango de ajuste |
+|-----------|:----------------:|
+| EDT | 0 dB a −10 dB |
+| T10 | −5 dB a −15 dB |
+| T20 | −5 dB a −25 dB |
+| T30 | −5 dB a −35 dB |
 
-La **Definición** ($D_{50}$) y la **Claridad** ($C_{80}$):
+*Tabla 1: rango de ajuste de la curva de Schroeder para cada parámetro de reverberación.*
 
-$$D_{50} = \frac{\sum_{n=0}^{N_{50}} h^2[n]}{\sum_{n=0}^{N-1} h^2[n]} \times 100\% \quad (N_{50} = \lfloor 0.050 \cdot f_s \rfloor)$$
+Para obtener T10, T20 y T30 basta con calcular su recta de ajuste y calcular cuánto tiempo tardaría la señal, si siguiese en esa recta, en caer -60 dB (extrapolación).
 
-$$C_{80} = 10 \log_{10}\!\left(\frac{\sum_{n=0}^{N_{80}} h^2[n]}{\sum_{n=N_{80}+1}^{N-1} h^2[n]}\right) \quad (N_{80} = \lfloor 0.080 \cdot f_s \rfloor)$$
+A diferencia de EDT/T10/T20/T30, la Definición ($D_{50}$) y la Claridad ($C_{80}$) no se obtienen ajustando una recta a la curva de Schroeder, sino comparando directamente la energía de la RI en distintas ventanas de tiempo.
+
+$D_{50}$ mide qué porcentaje de la energía total llega dentro de los primeros 50 ms desde el sonido directo, frente a la energía total de toda la respuesta. Es un indicador de inteligibilidad de la palabra: cuanto más alto, más clara se percibe la voz hablada en la sala.
+
+$C_{80}$ compara, en dB, la energía que llega en los primeros 80 ms (sonido directo más primeras reflexiones) contra la energía que llega después de ese punto (la cola reverberante). Un valor alto indica que predomina la energía temprana sobre la tardía, lo cual favorece la claridad percibida en música.
 
 ### 2.6 Regresión lineal por mínimos cuadrados
 
-La pendiente $m$ y ordenada al origen $b$ que minimizan $\sum (y_i - \hat{y}_i)^2$:
+El ajuste lineal busca la recta que mejor aproxima la curva de Schroeder en el tramo elegido, minimizando el error cuadrático total (ecuación 10). De ella se obtiene la pendiente $m$ (ecuación 11), usada para calcular los tiempos de reverberación, y la ordenada al origen $b$ (ecuación 12). El $R^2$ (ecuación 13) indica qué tan bueno fue ese ajuste.
 
-$$m = \frac{N \sum x_i y_i - \sum x_i \sum y_i}{N \sum x_i^2 - (\sum x_i)^2}, \quad b = \frac{\sum y_i - m \sum x_i}{N}$$
+$$\sum (y_i - \hat{y}_i)^2 \tag{10}$$
 
-El coeficiente de determinación:
+$$m = \frac{N \sum x_i y_i - \sum x_i \sum y_i}{N \sum x_i^2 - (\sum x_i)^2} \tag{11}$$
 
-$$R^2 = 1 - \frac{\sum (y_i - \hat{y}_i)^2}{\sum (y_i - \bar{y})^2}$$
+$$b = \frac{\sum y_i - m \sum x_i}{N} \tag{12}$$
+
+$$R^2 = 1 - \frac{\sum (y_i - \hat{y}_i)^2}{\sum (y_i - \bar{y})^2} \tag{13}$$
 
 ---
 
@@ -123,7 +134,7 @@ $$R^2 = 1 - \frac{\sum (y_i - \hat{y}_i)^2}{\sum (y_i - \bar{y})^2}$$
 
 ### 3.1 Arquitectura del software
 
-El sistema sigue una arquitectura de tres capas estrictamente separadas:
+El sistema se diseñó siguiendo una arquitectura de tres capas estrictamente separadas, tal como puede apreciarse en la figura 1:
 
 ```
 ┌──────────────────────────────────────────────────────┐
@@ -153,8 +164,35 @@ El sistema sigue una arquitectura de tres capas estrictamente separadas:
 │   responses.py   sistema)                            │
 └──────────────────────────────────────────────────────┘
 ```
+*Figura 1: Arquitectura de la API*
+
+A continuación la Tabla 2 resume brevemente cada función desarrollada en las tres milestones y a qué servicio pertenece, antes de entrar en el detalle de cada una:
+
+| Nombre | Funcionalidad | Servicio |
+|---|---|---|
+| `generar_ruido_rosa` | Genera ruido rosa  | `pink_noise.py` |
+| `generar_sine_sweep` | Genera el sweep logarítmico y su filtro inverso | `sine_sweep.py` |
+| `reproducir_y_grabar` | Reproduce el sweep y graba la respuesta de la sala | `grabacion_utils.py` |
+| `cargar_audio` | Carga un WAV/FLAC, devuelve la señal normalizada y frecuencia de muestreo | `signal_utils.py` |
+| `sintetizar_ri` | Genera una RI artificial con T60 conocido por banda | `signal_utils.py` |
+| `obtener_ri_desde_sweep` | Deconvoluciona la grabación para obtener la RI | `signal_utils.py` |
+| `a_escala_log` | Convierte la señal de amplitud lineal a escala dB | `signal_utils.py` |
+| `filtro_octava` | Filtra la señal en una banda de octava  | `filter.py` |
+| `suavizar_signal` | Suaviza la envolvente de la RI (Hilbert o media móvil) | `acoustic_parameters.py` |
+| `integral_schroeder` | Calcula la curva de decaimiento de energía (EDC) | `acoustic_parameters.py` |
+| `regresion_lineal` | Ajuste por mínimos cuadrados (pendiente, ordenada, R²) | `acoustic_parameters.py` |
+| `calcular_parametros_acusticos` | Calcula EDT/T10/T20/T30/D50/C80 por banda | `acoustic_parameters.py` |
+| `metodo_lundeby` | Determina el punto óptimo de truncamiento de la RI | `acoustic_parameters.py` |
+| `convolucionar` | Convoluciona un audio con una RI (validación subjetiva) | `convolution.py` |
+| Endpoints REST (`app/routers/*.py`) | Exponen las funciones anteriores vía HTTP | *No es un servicio — es la capa HTTP* |
+
+*Tabla 2: funciones de las milestones y servicio al que pertenecen.*
+
+En los apartados posteriores se desarrollará en profundidad todos los detalles respectivos a cada servicio y demás características fundamentales de la API. 
 
 ### 3.2 Flujo de procesamiento completo
+
+Si se desea conocer los parámetros acústicos de una RI ya previamente obtenida, el flujo consistiría en cargar el audio en archivo wav o flac, donde internamente el servidor procesará la RI filtrándola, aplicando la integral de schroeder,realizando un ajuste por cuadrados mínimos y finalmente obteniendo el parámetro deseado. La figura 2 ilustra este flujo, presentando a las funciones responsables de llevar a cabo tales tareas:
 
 ```
 Archivo WAV/FLAC
@@ -178,35 +216,44 @@ Archivo WAV/FLAC
   T = -60 / m   →  EDT, T10, T20, T30
   D50, C80      →  calculados directamente sobre h²
 ```
+*Figura 2: Flujo de procesamiento*
+
+
 
 ### 3.3 Milestone 1 — Generación de señales
 
-#### `generar_ruido_rosa`
+## 3.3.1 Generación de ruido rosa
 
-Genera ruido rosa (densidad espectral 1/f) en el dominio frecuencial:
+Se desarrolló la función `generar_ruido_rosa()` que recibe como argumentos la duración deseada como objeto flotante y la frecuencia de muestreo objeto entero, y devuelve un array de Numpy con el ruido rosa. En cuanto al algoritmo, la metodología aplicada consistió en crear ruido blanco con distribución normal mediante una función de la librería Numpy. Posteriormente al array creado se le aplicó la transformada rápida de fourier (FFT) para convertir a un vector en el dominio frecuencial, donde cada argumento representa un número complejo y cada índice una frecuencia. También se creó un vector de frecuencias, para luego dividir al vector de la transformada por este vector de frecuencias y así aplicar la ecuación 1 para obtener un vector de ruido rosa. Finalmente se aplicó la transformada inversa para obtener nuevamente un array en el dominio temporal y además se le aplicó una normalización entre -0,8 y 0,8, liberando así un margen de seguridad para evitar cualquier tipo de distorsión digital.
 
-1. Se genera ruido blanco gaussiano.
-2. Se aplica `np.fft.rfft`.
-3. Se multiplica cada componente por `1/√f`, convirtiendo la PSD de plana a `1/f`.
-4. Se aplica `np.fft.irfft(n=n_muestras)`.
-5. Se normaliza a 0.8 (headroom para reproducción por hardware).
+Se optó por el algoritmo de la FFT frente a otros como Voss-Mccartney por una mayor simplicidad conceptual y de sintáxis. No obstante, para garantizar un buen resultado se implementaron diversos test de control (pytest). Dentro de los test de ruido rosa, la mayoría cumple un rol trivial, como por ejemplo verificar que la salida de la función sea un array, o que esté normalizada. No obstante, el test más fundamental fue el de verificar que la pendiente de la densidad espectral de potencia sea efectivamente de -3 dB por octava. Este test es crucial, y pasarlo garantiza que el ruido sea efectivamente rosa. Internamente el test utiliza el método de Welch de la librería `scipy.signal`.
+
+El método de Welch estima la densidad espectral de potencia dividiendo la señal en segmentos solapados, calculando el periodograma (FFT) de cada uno y promediándolos. Se prefirió frente a una FFT simple porque el periodograma de una única FFT es un estimador muy ruidoso de la PSD, ya que su varianza no mejora aunque la señal sea más larga, mientras que promediar varios segmentos suaviza esas fluctuaciones y da una estimación mucho más estable de la pendiente real del espectro, necesaria para verificar con confianza el -3 dB/octava esperado.
+
+## 3.3.2 Generación de sine sweep y filtro inverso
+
+La función responsable de crear el sine sweep y su filtro inverso fue **`generar_sine_sweep()`**, que recibe como argumentos la frecuencia inicial y final del barrido como objetos flotantes, la duración deseada como objeto flotante y la frecuencia de muestreo como objeto entero, y devuelve dos arrays de Numpy: el sweep y su filtro inverso. El algoritmo arma primero un vector de tiempo con `np.linspace`, calcula la constante $L$ de la ecuación 3 y a partir de ahí la fase instantánea, para finalmente aplicarle el seno y obtener el barrido. El filtro inverso se obtiene invirtiendo el array del sweep (`sweep[::-1]`) y multiplicándolo por una rampa exponencial decreciente que implementa la corrección de amplitud $A(t)$ de la ecuación 4, normalizando después a un pico de 1.0. Por último, tanto el sweep como su filtro inverso se multiplican por una ganancia de 0.5 (headroom de −6 dB) elegido arbitrariamente para evitar clipping al reproducirlos por hardware real.
+
+Para corroborar su correcto funcionamiento, además de los test triviales se incluyó un test fundamental, el cual verifica que la convolución entre el sine sweep y el filtro inverso efectivamente sea un impulso, cuyo pico se sitúe por lo menos 40 dB por encima del nivel del piso de ruido. Para este test se eligió utilizar el algoritmo por excelencia para este tipo de cálculos, `fftconvolve` de `scipy.signal`.
+
+`fftconvolve` calcula la convolución explotando el teorema de convolución: en vez de sumar el producto desplazado muestra a muestra, transforma ambas señales al dominio de la frecuencia mediante FFT, las multiplica punto a punto, y antitransforma el resultado con FFT inversa para volver al dominio temporal. Esto es muy práctico puesto que calcular una convolución directamente implica mucho más procesamiento que una multiplicación. Internamente aplica zero-padding a las señales de entrada para que esa multiplicación en frecuencia represente la convolución lineal deseada y no una convolución circular (que "envolvería" la cola de la señal sobre el principio).
+
+Puntualmente en el test, se generan un sweep y su filtro inverso de 5 segundos a 44100 Hz y se convolucionan con `fftconvolve`. Sobre el resultado se busca el índice de la muestra de mayor amplitud absoluta, que corresponde al pico del impulso recuperado. Para estimar el piso de ruido se enmascaran las 200 muestras centradas en ese pico (±100 muestras) y se promedia el valor absoluto de todas las muestras restantes. Finalmente se calcula la relación pico/piso en decibeles como 20·log10(pico/piso) y se verifica que sea de al menos 40 dB, el umbral mínimo para considerar que la deconvolución en Milestone 2  recuperará una RI con buena resolución temporal y bajo nivel de artefactos.
+
+## 3.3.3 Reproducción y grabación simultánea
+
+Para poder medir una RI real en un recinto hace falta, además de generar la señal de excitación, un mecanismo que la reproduzca por un parlante y grabe simultáneamente la respuesta del recinto con un micrófono. Esa tarea la resuelve la función `reproducir_y_grabar()`, que recibe la señal a reproducir (mono o estéreo), la frecuencia de muestreo, la duración deseada de grabación y un tiempo de preroll (0.5 s por defecto), devolviendo un array de Numpy 1D con el audio capturado.
+
+Internamente se apoya en `sd.playrec()` de la librería `sounddevice`, que reproduce un array y graba al mismo tiempo, devolviendo una grabación de exactamente la misma longitud que el array reproducido. Esto impone una restricción: si se le pasara únicamente la señal de excitación, la grabación terminaría junto con ella y se perdería toda la cola de reverberación del recinto, que es el dato que en realidad interesa capturar. Para resolverlo, la función arma un array extendido concatenando tres tramos: un tramo inicial de silencio (`n_preroll` muestras), la señal de excitación, y un tramo final de silencio (`n_padding` muestras) calculado como la diferencia entre la duración total de grabación pedida y lo ya ocupado por preroll y señal. Ese array extendido es el que finalmente se le pasa a `sd.playrec()`.
 
 **Decisiones clave:**
-- `rfft`/`irfft` en lugar de `fft`/`ifft`: para señales reales es el doble de eficiente (aprovecha la simetría hermítica).
-- `factores[0] = 1` (DC sin modificar): evita división por cero en f = 0.
-- `irfft(n=n_muestras)`: garantiza exactamente la misma cantidad de muestras que la entrada, independientemente de si es par o impar.
+- El preroll inicial compensa la latencia propia del sistema de audio (el tiempo que tarda la placa en arrancar a reproducir/grabar de forma efectiva), evitando perder las primeras muestras útiles.
+- El padding final no reproduce nada, pero al ser parte del array reproducido, extiende la duración de la grabación lo suficiente como para que la reverberación del recinto decaiga naturalmente antes de que `sd.playrec()` corte la captura.
+- Se admite señal mono (`ndim == 1`) o estéreo (`ndim == 2`), ajustando `n_channels` y usando `np.concatenate` o `np.vstack` según corresponda.
+- Un `sd.PortAudioError` (por ejemplo, ausencia de dispositivo de audio) se recaptura y se relanza como `RuntimeError` con un mensaje claro, en vez de propagar la excepción de bajo nivel de `sounddevice`.
 
-#### `generar_sine_sweep`
+Como los tests de este proyecto corren en un entorno sin hardware de audio real, `sd.playrec` y `sd.wait` se mockean con `unittest.mock.patch`, simulando una grabación de la duración esperada. Los tests verifican que la salida sea siempre 1D independientemente de si la entrada fue mono o estéreo, que la longitud de la grabación coincida (con una tolerancia del 1%) con `duracion_grabacion + preroll`, y que si `sd.playrec` lanza un `PortAudioError` la función efectivamente lo traduzca a un `RuntimeError` con el mensaje "No hay dispositivo de audio disponible".
 
-Genera el sweep logarítmico y su filtro inverso según Farina (2000):
-
-**Decisiones clave:**
-- Sweep logarítmico en lugar de lineal: invierte igual tiempo en cada octava, garantizando buena SNR en todas las bandas de análisis.
-- `endpoint=False` en `np.linspace`: evita discontinuidad de fase si la señal se reproduce en loop.
-- Headroom de −6 dB (factor 0.5): evita clipping en reproducción por hardware.
-- Misma longitud para sweep y filtro inverso: requisito de `fftconvolve` para que la deconvolución no quede desplazada.
-
-La SNR pico/piso de la convolución sweep × filtro inverso medida fue de **≈ 101.7 dB**, muy por encima del umbral mínimo de 40 dB.
 
 ### 3.4 Milestone 2 — Procesamiento de la RI
 
