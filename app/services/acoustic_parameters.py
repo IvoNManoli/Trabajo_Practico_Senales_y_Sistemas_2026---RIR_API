@@ -121,7 +121,7 @@ def _calcular_tiempo(
 
 
 def calcular_parametros_acusticos(
-    ri: np.ndarray, fs: int, usar_lundeby: bool = False
+    ri: np.ndarray, fs: int, usar_lundeby: bool = True
 ) -> dict[str, dict[float, float | None]]:
     """Calcula los parametros acusticos ISO 3382 por banda de octava.
 
@@ -137,7 +137,7 @@ def calcular_parametros_acusticos(
     usar_lundeby : bool, optional
         Si True, aplica el metodo de Lundeby para truncar la RI antes de
         calcular la integral de Schroeder. Util para RIs medidas con ruido
-        de fondo real. Por defecto False.
+        de fondo real. Por defecto True.
 
     Returns
     -------

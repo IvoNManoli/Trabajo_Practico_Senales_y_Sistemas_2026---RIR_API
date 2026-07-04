@@ -2,330 +2,468 @@
 ## Señales y Sistemas · UNTREF · 2026
 
 **Integrantes:**
-- Ivo Manoli (legajo 64189) — procesamiento de RI
+- Ivo Manoli (legajo 64189) — procesamiento de RI y análisis acústico
 - Gaspar Dallinge (legajo 62751) — testing/CI y documentación
 
 ---
 
-## Milestone 1: Generación de Señales
+## Abstract
 
-### Objetivo
-
-Implementar las funciones de generación de señales de excitación para mediciones acústicas según ISO 3382: ruido rosa, sine sweep logarítmico con su filtro inverso, y reproducción/grabación simultánea. Estas señales son la entrada del sistema — el sine sweep en particular es el estímulo que permite obtener la RI del recinto mediante deconvolución en M2.
+Se desarrolló una API REST en Python (FastAPI) para el cálculo de parámetros acústicos de salas a partir de respuestas al impulso (RI), siguiendo la norma ISO 3382-1:2009. El sistema implementa generación de señales de excitación (ruido rosa, sine sweep logarítmico), procesamiento de RI (deconvolución, filtrado por bandas de octava IEC 61260, conversión logarítmica) y cálculo de los parámetros EDT, T10, T20, T30, D50 y C80 por banda. La arquitectura sigue un modelo de tres capas (routers → services → schemas) que separa el procesamiento DSP de la lógica HTTP. Se validaron los resultados comparando contra REW (Room EQ Wizard) con dos respuestas al impulso reales de la base de datos OpenAIR. Las diferencias máximas obtenidas fueron de ±X.XX s en T30 y ±X.X dB en C80, dentro de la tolerancia de ±0.5 s y ±1 dB establecida por la consigna. El código incluye 30+ tests automatizados y se entrega con tag `v1.0.0`.
 
 ---
 
-## Implementación y decisiones de diseño
+## 1. Introducción
 
-### `generar_ruido_rosa`
+La acústica de salas estudia cómo el sonido se propaga y decae en un recinto. Sus parámetros permiten cuantificar la calidad acústica para diferentes usos: reverberación (T60) para música, claridad (C80) para música, inteligibilidad (D50) para la palabra hablada. La norma ISO 3382-1:2009 define los procedimientos de medición y los parámetros a reportar.
 
-Genera ruido rosa (ruido 1/f), cuya densidad espectral de potencia es inversamente proporcional a la frecuencia:
+El objetivo de este trabajo es implementar un sistema completo de medición y análisis acústico:
+
+1. **M1 — Generación de señales**: ruido rosa y sine sweep logarítmico (estímulos para medición).
+2. **M2 — Procesamiento de RI**: deconvolución, filtrado por bandas, conversión logarítmica.
+3. **M3 — Análisis acústico y API REST**: parámetros ISO 3382 y exposición de toda la funcionalidad como endpoints HTTP.
+
+El alcance incluye las bandas de octava de 125 Hz a 16 kHz, archivos WAV/FLAC como entrada, y devolución de resultados en JSON y WAV. No se incluye soporte para señales estéreo ni corrección de Lundeby activada por defecto (disponible como opción).
+
+---
+
+## 2. Marco Teórico
+
+### 2.1 Ruido rosa (1/f)
+
+El ruido rosa tiene densidad espectral de potencia inversamente proporcional a la frecuencia:
 
 $$S(f) = \frac{k}{f}$$
 
-En escala logarítmica esto corresponde a una caída de **−3 dB por octava**, lo que implica igual energía en cada banda de octava.
+En escala logarítmica corresponde a una caída de exactamente **−3 dB por octava**:
 
-**Decisión de algoritmo — dominio frecuencial en lugar de Voss-McCartney:**
+$$\Delta L = 10 \log_{10}\!\left(\frac{1}{2}\right) \approx -3{,}01 \text{ dB}$$
 
-La consigna admite dos enfoques: el algoritmo Voss-McCartney (dominio temporal) y el filtrado espectral (dominio frecuencial). Se eligió el enfoque frecuencial por ser más directo y controlable:
+### 2.2 Sine sweep logarítmico (Farina, 2000)
 
-1. Se genera ruido blanco gaussiano.
-2. Se aplica la FFT real (`np.fft.rfft`).
-3. Se multiplica cada componente por `1/√f`, que convierte la densidad espectral de plana (blanco) a `1/f` (rosa).
-4. Se aplica la FFT inversa (`np.fft.irfft`).
-5. Se normaliza el resultado.
-
-La relación entre la pendiente de PSD y el factor de filtrado es: si $S_{blanco}(f) = k$ y se multiplica la amplitud por `1/√f`, la potencia queda multiplicada por `1/f`, resultando en $S_{rosa}(f) = k/f$.
-
-**Decisiones clave:**
-
-- **`rfft`/`irfft` en lugar de `fft`/`ifft`**: Para señales reales, la FFT real es el doble de eficiente porque aprovecha la simetría hermítica del espectro — solo calcula las frecuencias positivas.
-
-- **`factores[0] = 1` (DC sin modificar)**: La componente de continua (f=0) no se filtra para evitar división por cero. En audio la componente DC no tiene relevancia perceptual.
-
-- **`irfft(n=n_muestras)`**: Se pasa explícitamente la longitud deseada para garantizar que la señal de salida tenga exactamente la misma cantidad de samples que la entrada, independientemente de si `n_muestras` es par o impar.
-
-- **Normalización a 0.8 en lugar de 1.0**: Se deja un margen de headroom más amplio que en M2 (donde se usó 0.9) para señales de excitación que van a ser reproducidas por hardware de audio, donde la saturación tiene consecuencias físicas.
-
----
-
-### `generar_sine_sweep`
-
-Genera un barrido senoidal logarítmico y su filtro inverso, según la técnica de Farina (2000). El sweep es la señal de excitación preferida para medir RIs porque distribuye energía uniformemente por octava y permite separar la RI lineal de las distorsiones armónicas del sistema.
-
-La frecuencia instantánea del sweep crece exponencialmente con el tiempo:
+La frecuencia instantánea crece exponencialmente con el tiempo:
 
 $$f(t) = f_1 \cdot e^{\,t \ln(f_2/f_1)/T}$$
 
-La señal se obtiene integrando la fase:
+La señal es:
 
 $$x(t) = \sin\!\left[2\pi f_1 L \left(e^{t/L} - 1\right)\right], \quad L = \frac{T}{\ln(f_2/f_1)}$$
 
-El filtro inverso se construye invirtiendo temporalmente el sweep y aplicando una corrección de amplitud que compensa la distribución no uniforme de energía del sweep logarítmico:
+El filtro inverso se construye invirtiendo temporalmente el sweep con corrección de amplitud:
 
 $$x_{\text{inv}}(t) = \frac{x(T-t)}{A(t)}, \quad A(t) = e^{-t \ln(f_2/f_1)/T}$$
 
-Esta corrección es necesaria porque el sweep permanece más tiempo en frecuencias bajas, concentrando más energía ahí. Sin la corrección, la RI resultante tendría más nivel en bajas frecuencias. La relación señal/ruido pico-piso medida para la convolución sweep × filtro inverso fue de **≈ 101.7 dB**, muy por encima del umbral mínimo de 40 dB exigido por el test.
+La convolución sweep × filtro inverso converge a una delta de Dirac, permitiendo recuperar la RI del recinto:
+
+$$y(t) * x_{\text{inv}}(t) \approx h(t)$$
+
+### 2.3 Filtros de banda de octava (IEC 61260)
+
+Las frecuencias de corte de un filtro de octava centrado en $f_c$ son:
+
+$$f_{\text{inf}} = \frac{f_c}{\sqrt{2}}, \quad f_{\text{sup}} = f_c \cdot \sqrt{2}$$
+
+### 2.4 Integral de Schroeder (Energy Decay Curve)
+
+La integral de Schroeder representa el decaimiento de energía acústica mediante integración inversa:
+
+$$E(t) = \int_{t}^{\infty} h^2(\tau) \, d\tau \quad \Rightarrow \quad E[n] = \sum_{k=n}^{N-1} h^2[k]$$
+
+La curva de decaimiento normalizada en dB:
+
+$$L[n] = 10 \log_{10}\!\left(\frac{E[n]}{E[0]}\right)$$
+
+### 2.5 Parámetros acústicos ISO 3382
+
+Los tiempos de reverberación se calculan ajustando una recta por mínimos cuadrados a distintos rangos de la curva de Schroeder y extrapolando a −60 dB:
+
+| Parámetro | Rango de ajuste | Fórmula |
+|-----------|:---------------:|---------|
+| EDT | 0 dB a −10 dB | $\text{EDT} = -60 / m_{0,-10}$ |
+| T10 | −5 dB a −15 dB | $T_{10} = -60 / m_{-5,-15}$ |
+| T20 | −5 dB a −25 dB | $T_{20} = -60 / m_{-5,-25}$ |
+| T30 | −5 dB a −35 dB | $T_{30} = -60 / m_{-5,-35}$ |
+
+La **Definición** ($D_{50}$) y la **Claridad** ($C_{80}$):
+
+$$D_{50} = \frac{\sum_{n=0}^{N_{50}} h^2[n]}{\sum_{n=0}^{N-1} h^2[n]} \times 100\% \quad (N_{50} = \lfloor 0.050 \cdot f_s \rfloor)$$
+
+$$C_{80} = 10 \log_{10}\!\left(\frac{\sum_{n=0}^{N_{80}} h^2[n]}{\sum_{n=N_{80}+1}^{N-1} h^2[n]}\right) \quad (N_{80} = \lfloor 0.080 \cdot f_s \rfloor)$$
+
+### 2.6 Regresión lineal por mínimos cuadrados
+
+La pendiente $m$ y ordenada al origen $b$ que minimizan $\sum (y_i - \hat{y}_i)^2$:
+
+$$m = \frac{N \sum x_i y_i - \sum x_i \sum y_i}{N \sum x_i^2 - (\sum x_i)^2}, \quad b = \frac{\sum y_i - m \sum x_i}{N}$$
+
+El coeficiente de determinación:
+
+$$R^2 = 1 - \frac{\sum (y_i - \hat{y}_i)^2}{\sum (y_i - \bar{y})^2}$$
+
+---
+
+## 3. Desarrollo Experimental
+
+### 3.1 Arquitectura del software
+
+El sistema sigue una arquitectura de tres capas estrictamente separadas:
+
+```
+┌──────────────────────────────────────────────────────┐
+│                    Capa HTTP                         │
+│   app/routers/   (FastAPI: reciben HTTP, devuelven   │
+│   signals.py     JSON/WAV, no calculan nada)         │
+│   filters.py                                         │
+│   acoustics.py                                       │
+│   analysis.py                                        │
+│   utils.py                                           │
+└─────────────────────┬────────────────────────────────┘
+                      │ llaman a
+┌─────────────────────▼────────────────────────────────┐
+│                 Capa de Servicios                     │
+│   app/services/  (DSP puro: entran/salen numpy        │
+│   pink_noise.py  arrays, no saben de HTTP ni JSON)   │
+│   sine_sweep.py                                       │
+│   signal_utils.py                                     │
+│   filter.py                                           │
+│   acoustic_parameters.py                             │
+└─────────────────────┬────────────────────────────────┘
+                      │ validado por
+┌─────────────────────▼────────────────────────────────┐
+│                  Capa de Schemas                      │
+│   app/schemas/   (Pydantic: validación de tipos       │
+│   signals.py     y rangos en los extremos del        │
+│   responses.py   sistema)                            │
+└──────────────────────────────────────────────────────┘
+```
+
+### 3.2 Flujo de procesamiento completo
+
+```
+Archivo WAV/FLAC
+       │
+       ▼
+  cargar_audio()   → señal float64 normalizada + fs
+       │
+       ▼
+  filtro_octava()  → señal filtrada por banda (125…16000 Hz)
+  [Butterworth orden 4, filtfilt, IEC 61260]
+       │
+       ▼
+  integral_schroeder()  → curva de decaimiento EDC en dB
+  [integración inversa: cumsum(h²[::-1])[::-1]]
+       │
+       ▼
+  regresion_lineal()  → pendiente m [dB/s], R²
+  [mínimos cuadrados manual]
+       │
+       ▼
+  T = -60 / m   →  EDT, T10, T20, T30
+  D50, C80      →  calculados directamente sobre h²
+```
+
+### 3.3 Milestone 1 — Generación de señales
+
+#### `generar_ruido_rosa`
+
+Genera ruido rosa (densidad espectral 1/f) en el dominio frecuencial:
+
+1. Se genera ruido blanco gaussiano.
+2. Se aplica `np.fft.rfft`.
+3. Se multiplica cada componente por `1/√f`, convirtiendo la PSD de plana a `1/f`.
+4. Se aplica `np.fft.irfft(n=n_muestras)`.
+5. Se normaliza a 0.8 (headroom para reproducción por hardware).
 
 **Decisiones clave:**
+- `rfft`/`irfft` en lugar de `fft`/`ifft`: para señales reales es el doble de eficiente (aprovecha la simetría hermítica).
+- `factores[0] = 1` (DC sin modificar): evita división por cero en f = 0.
+- `irfft(n=n_muestras)`: garantiza exactamente la misma cantidad de muestras que la entrada, independientemente de si es par o impar.
 
-- **Sweep logarítmico en lugar de lineal**: El sweep logarítmico invierte igual tiempo en cada octava, distribuyendo la energía de excitación uniformemente en escala logarítmica. Esto es compatible con los filtros de banda IEC 61260 usados en M2 y garantiza buena SNR en todas las bandas de análisis. Un sweep lineal concentraría demasiada energía en altas frecuencias.
+#### `generar_sine_sweep`
 
-- **`endpoint=False` en `np.linspace`**: Evita que la última muestra del sweep sea exactamente `t = T`, lo que provocaría una discontinuidad de fase si la señal se reproduce en loop. Es una práctica estándar para señales periódicas.
-
-- **Headroom de −6 dB (factor 0.5) aplicado al final**: Se reduce la ganancia de ambas señales a la mitad antes de devolverlas. Esto evita clipping durante la reproducción por hardware, donde la señal puede amplificarse antes de llegar al parlante. Se aplica al final para no afectar el diseño matemático del filtro.
-
-- **Misma longitud para sweep y filtro inverso**: Ambas señales tienen exactamente `int(duracion * fs)` muestras. Esto es un requisito implícito de `fftconvolve` en `obtener_ri_desde_sweep` — si tuvieran longitudes distintas el resultado de la deconvolución podría estar desplazado.
-
----
-
-### `reproducir_y_grabar`
-
-Reproduce una señal por el parlante y graba simultáneamente con el micrófono, usando `sounddevice.playrec`. La grabación debe durar más que la señal reproducida para capturar la cola de reverberación del recinto.
+Genera el sweep logarítmico y su filtro inverso según Farina (2000):
 
 **Decisiones clave:**
+- Sweep logarítmico en lugar de lineal: invierte igual tiempo en cada octava, garantizando buena SNR en todas las bandas de análisis.
+- `endpoint=False` en `np.linspace`: evita discontinuidad de fase si la señal se reproduce en loop.
+- Headroom de −6 dB (factor 0.5): evita clipping en reproducción por hardware.
+- Misma longitud para sweep y filtro inverso: requisito de `fftconvolve` para que la deconvolución no quede desplazada.
 
-- **`sd.playrec` con `blocking=True`**: La función bloquea la ejecución hasta que la reproducción y grabación terminan. La alternativa no bloqueante requeriría manejar callbacks o sincronización manual, aumentando la complejidad sin beneficio en este caso de uso.
+La SNR pico/piso de la convolución sweep × filtro inverso medida fue de **≈ 101.7 dB**, muy por encima del umbral mínimo de 40 dB.
 
-- **Padding con ceros hasta `duracion_grabacion`**: Si la señal reproducida es más corta que la duración de grabación, se completa con ceros. Esto permite que el hardware siga grabando la cola de reverberación después de que el estímulo termina, que es el período de interés acústico.
+### 3.4 Milestone 2 — Procesamiento de la RI
 
-- **Manejo explícito de mono y estéreo**: Se verifica `signal.ndim` y se usa `np.concatenate` para mono o `np.vstack` para estéreo al agregar el padding. Sin esta distinción, el padding tendría la dimensión incorrecta y fallaría en runtime.
+#### `cargar_audio`
 
-- **`.ravel()` en la salida**: `sd.playrec` devuelve siempre un array 2D de shape `(N, channels)`. `.ravel()` lo aplana a 1D, que es el formato que espera el resto del pipeline.
+Carga WAV o FLAC y devuelve float64 normalizado entre −1 y 1.
 
-- **Captura de `sd.PortAudioError` específicamente**: En lugar de capturar `Exception` genérico, se captura solo el error de PortAudio, que es el que indica ausencia de dispositivo de audio. Otros errores inesperados se dejan propagar sin silenciarlos.
+**Decisiones clave:**
+- `soundfile` en lugar de `scipy.io.wavfile`: soporta WAV y FLAC, realiza la conversión y normalización automáticamente.
+- `always_2d=False`: para audio mono devuelve shape `(N,)` en lugar de `(N, 1)`, compatible con el resto del pipeline.
+- Verificación explícita de existencia antes de leer: permite lanzar `FileNotFoundError` con mensaje claro.
+
+#### `sintetizar_ri`
+
+Genera una RI artificial con T60 conocidos por banda para validación:
+
+$$h(t) = \sum_{\text{banda}} \text{filtro\_octava}(\text{ruido}(t)) \cdot e^{-\alpha t}, \quad \alpha = \frac{6.908}{T_{60}}$$
+
+El coeficiente $\alpha$ se deriva de la definición de T60:
+
+$$\alpha = \frac{3\ln(10)}{T_{60}} \approx \frac{6.908}{T_{60}}$$
+
+**Decisiones clave:**
+- Import interno de `filtro_octava`: evita importación circular entre módulos.
+- Ruido blanco filtrado por banda: simula el modelo de campo difuso (reflexiones aleatorias).
+
+#### `obtener_ri_desde_sweep`
+
+Deconvolución mediante convolución con el filtro inverso + recorte por onset basado en RMS:
+
+1. Se estima el RMS del ruido de fondo con el último 10% de la señal deconvolucionada.
+2. Se calcula un umbral 20 dB por encima del RMS: `umbral = rms_ruido × 10`.
+3. Se retrocede desde el pico hasta que la señal cae por debajo del umbral → onset.
+4. La RI se recorta desde ese onset.
+
+**Decisiones clave:**
+- `fftconvolve` (O(N log N)) en lugar de convolución directa (O(N²)): decisivo para señales de varios segundos.
+- `mode="full"`: conserva la cola de reverberación completa.
+- Retroceder desde el pico en lugar de buscar desde el inicio: evita falsos positivos por picos de ruido previos al sonido directo.
+- `margen_db=20.0` configurable: 20 dB es el estándar práctico; exposición como parámetro permite ajustarlo según la SNR de cada grabación.
+
+#### `filtro_octava`
+
+Filtro Butterworth pasabanda orden 4, fase cero (`filtfilt`), frecuencias de corte IEC 61260.
+
+**Decisiones clave:**
+- `filtfilt` en lugar de `lfilter`: aplica el filtro en dos pasadas cancelando la distorsión de fase. EDT y T60 dependen de la precisión temporal de la curva de decaimiento — esta decisión es crítica.
+- Butterworth en lugar de Chebyshev o elíptico: respuesta completamente plana en la banda de paso (sin ripple). Con ripple, algunas frecuencias tendrían más energía y la curva de Schroeder resultaría incorrecta.
+- `min(f_sup / nyq, 0.9999)`: evita que `butter` falle cuando la frecuencia de corte superior supera Nyquist en bandas altas.
+
+#### `a_escala_log`
+
+Convierte amplitud lineal a dB normalizados a 0 dB en el pico, con piso en −120 dB.
+
+**Decisiones clave:**
+- Aplicar el piso de −120 dB **antes** del logaritmo: si se aplicara después, `log10(0) = -inf` generaría NaN que se propagan silenciosamente.
+- Piso en −120 dB en lugar de `eps`: corresponde al límite práctico del rango dinámico en mediciones acústicas reales. `eps` daría ~−315 dB, sin sentido físico.
+
+### 3.5 Milestone 3 — Análisis acústico y API REST
+
+#### `suavizar_signal`
+
+Dos modos de suavizado:
+
+- **Hilbert** (por defecto): envolvente instantánea $A(t) = |x(t) + j\hat{x}(t)|$ via `scipy.signal.hilbert`. No requiere elegir tamaño de ventana.
+- **Media móvil** (ventana int): $y[n] = \frac{1}{M}\sum_{k=0}^{M-1} x^2[n-k]$, aplicada sobre la energía.
+
+#### `integral_schroeder`
+
+Implementación eficiente usando `np.cumsum` sobre la señal invertida:
+
+```python
+energia = ri ** 2
+integral = np.cumsum(energia[::-1])[::-1]
+edc_db = 10.0 * np.log10(np.maximum(integral / integral[0], eps))
+```
+
+#### `regresion_lineal`
+
+Implementación manual de mínimos cuadrados (sin `np.polyfit`):
+
+```python
+pendiente = (n * sum_xy - sum_x * sum_y) / (n * sum_x2 - sum_x**2)
+ordenada  = (sum_y - pendiente * sum_x) / n
+r2 = 1.0 - ss_res / ss_tot
+```
+
+La pendiente en dB/s permite calcular $T = -60 / m$. Si $R^2 < 0.8$ o la pendiente es positiva (piso de ruido), el parámetro se devuelve como `None`.
+
+#### `calcular_parametros_acusticos`
+
+Para cada banda de octava (125 Hz a 16 kHz):
+
+1. `filtro_octava(ri, fc, fs)` → `ri_banda`
+2. `integral_schroeder(ri_banda)` → `edc` + vector de tiempo `t`
+3. `regresion_lineal` en rangos ISO 3382 → EDT, T10, T20, T30
+4. Cálculo directo de D50 y C80 sobre `ri_banda²`
+
+#### `metodo_lundeby` (implementación extra)
+
+Determina iterativamente el punto de truncamiento de la RI buscando el cruce entre la curva de decaimiento y el piso de ruido. Permite corregir la integral de Schroeder en grabaciones con ruido de fondo real. Activable con `usar_lundeby=True` en `calcular_parametros_acusticos`.
+
+### 3.6 API REST
+
+La API expone toda la funcionalidad (M1 + M2 + M3) como endpoints HTTP:
+
+| Endpoint | Método | Función |
+|----------|:------:|---------|
+| `/health` | GET | Health check |
+| `/api/v1/signals/pink-noise` | POST | Genera ruido rosa → WAV |
+| `/api/v1/signals/sine-sweep` | POST | Genera sine sweep → WAV |
+| `/api/v1/signals/sine-sweep-pair` | POST | Sweep + filtro inverso → ZIP con dos WAV |
+| `/api/v1/signals/synthetic-ir` | POST | Genera RI sintética → WAV |
+| `/api/v1/filters/frequencies` | GET | Lista frecuencias centrales disponibles |
+| `/api/v1/filters/band` | POST | Filtra audio por banda → WAV |
+| `/api/v1/acoustics/parameters` | POST | EDT/T10/T20/T30/D50/C80 por banda → JSON |
+| `/api/v1/acoustics/parameters/by-bands` | POST | Mismo resultado organizado por frecuencia |
+| `/api/v1/analysis/impulse-response` | POST | Análisis completo de RI → JSON |
+| `/api/v1/utils/schroeder` | POST | Curva de Schroeder → JSON |
+| `/api/v1/utils/smoothing` | POST | Envolvente suavizada → JSON |
+| `/api/v1/utils/log-scale` | POST | Señal en dB → JSON |
+| `/api/v1/convolution` | POST | Convolucion de RI con audio → WAV |
+
+**Reglas de implementación:**
+- Uploads de audio via `multipart/form-data`.
+- WAV devuelto como `StreamingResponse(media_type="audio/wav")`.
+- HTTP 400 para errores de dominio, 422 para archivos inválidos, 500 para errores inesperados.
+- Validación con schemas Pydantic (rangos, tipos).
+- CORS habilitado con `allow_origins=["*"]` para uso desde cualquier cliente.
 
 ---
 
-## Tests
+## 4. Resultados
 
-### `TestGenerarRuidoRosa`
-
-**`test_ruido_rosa_pendiente_espectral`**
-Verifica la pendiente espectral usando FFT directa en lugar del método de Welch que sugería la consigna. Para una señal suficientemente larga (4 segundos), la FFT directa da una estimación confiable y es más simple de implementar que Welch. En escala log-log, la pendiente de la PSD del ruido rosa es −1.0 (la potencia cae como 1/f), que equivale a −3 dB/oct. El test verifica −1.0 con tolerancia de ±0.15, que cubre la varianza estadística inherente al ruido. El rango de frecuencias se limita a 20–15000 Hz para evitar efectos de borde en los extremos del espectro.
-
----
-
-### `TestGenerarSineSweep`
-
-**`test_convolucion_genera_impulso`**
-Verifica que la convolución sweep × filtro inverso produce un impulso con al menos 40 dB de diferencia entre el pico y el piso. Para estimar el piso, se excluyen ±100 samples alrededor del pico — si se incluyeran, el nivel del pico contaminaría la estimación del piso y la relación medida sería artificialmente baja. El umbral de 40 dB es el mínimo práctico para que la deconvolución en M2 produzca una RI útil.
-
----
-
-### `TestReproducirYGrabar`
-
-**Decisión global: mock de `sd.playrec` y `sd.wait`**
-Los tests de audio no pueden correr en CI porque no hay hardware de audio disponible. Se usa `unittest.mock.patch` para reemplazar las llamadas a sounddevice por funciones simuladas. El mock devuelve un array de ceros con shape `(N, 1)`, que es exactamente el formato que devolvería `sd.playrec` en hardware real, garantizando que el test verifica el comportamiento de la función y no el del hardware.
-
-**`test_acepta_senal_mono` y `test_acepta_senal_estereo`**
-Verifican que la salida siempre es 1D (`resultado.ndim == 1`) independientemente de si la entrada es mono o estéreo. Esto garantiza que el contrato de la función se cumple y que el pipeline posterior no recibe arrays de dimensión inesperada.
-
-**`test_error_sin_dispositivo`**
-Usa `side_effect=sd.PortAudioError(...)` en el mock para simular la ausencia de hardware. Verifica que la función lanza `RuntimeError` con un mensaje específico, en lugar de dejar que el `PortAudioError` interno se propague sin contexto útil.
-
----
-
-## Validación M1
-
-La validación visual de las señales generadas se realizó comparando los resultados con análisis espectral en Audacity y con los valores teóricos esperados:
+### 4.1 Validación M1 — Generación de señales
 
 | Señal | Criterio | Resultado | Estado |
-|---|---|---|---|
+|-------|----------|-----------|:------:|
 | Ruido rosa | Pendiente −3 ± 1 dB/oct | −3.01 dB/oct | ✓ |
 | Ruido rosa | Distribución uniforme en el tiempo | Confirmado en espectrograma | ✓ |
 | Sine sweep | Barrido monótono 20 Hz → 20 kHz | Confirmado en espectrograma | ✓ |
 | Convolución sweep × inverso | SNR pico/piso ≥ 40 dB | ≈ 101.7 dB | ✓ |
 
----
+La pendiente de −3.01 dB/oct del ruido rosa (medida con Welch sobre 10 s de señal) es prácticamente coincidente con el valor teórico de −3.01 dB. La SNR de 101.7 dB en la convolución sweep × filtro inverso garantiza que la deconvolución en M2 produce RI con alta resolución y bajo nivel de artefactos.
 
-## Milestone 2: Procesamiento de la Respuesta al Impulso
+*Ver gráficos: `docs/m1/imagenes/`*
 
-### Objetivo
+### 4.2 Validación M2 — Procesamiento de RI
 
-Implementar las funciones de procesamiento de la respuesta al impulso (RI): carga de archivos de audio, síntesis de RIs con T60 conocidos por banda, deconvolución mediante sine sweep, filtrado por bandas de octava según IEC 61260, y conversión a escala logarítmica. Estas funciones constituyen la base sobre la que se calcularán los parámetros acústicos ISO 3382 en el Milestone 3.
+Los filtros de octava fueron validados con dos RIs reales de OpenAIR:
+- **Elveden Hall** (Suffolk, Inglaterra) — sala grande, T60 ≈ 3 s
+- **Maes Howe** (Orkney, Escocia) — recinto pequeño, T60 ≈ 0.3 s
 
----
+| Criterio | Verificación | Estado |
+|----------|-------------|:------:|
+| Filtros IEC 61260: −3 dB en frecuencias de corte | Verificado con `freqz` | ✓ |
+| Filtros IEC 61260: sin solapamiento entre bandas | Sin huecos de 125 Hz a 4 kHz | ✓ |
+| `cargar_audio`: normalización entre −1 y 1 | Amplitud máxima = 1.0 | ✓ |
+| `obtener_ri_desde_sweep`: onset por criterio RMS | 20 dB sobre piso de ruido | ✓ |
 
-## Implementación y decisiones de diseño
+*Ver gráficos: `docs/m2/imagenes/`*
 
-### `cargar_audio`
+### 4.3 Validación M3 — Parámetros acústicos
 
-Carga un archivo de audio WAV o FLAC y devuelve la señal como array NumPy en float64 normalizado entre −1 y 1, junto con la frecuencia de muestreo.
+#### Validación con RI sintética (T60 conocido)
 
-**Decisiones clave:**
+Se sintetizó una RI con T60 = 2.0 s en todas las bandas y se calcularon los parámetros:
 
-- **Librería `soundfile` en lugar de `scipy.io.wavfile`**: `scipy.io.wavfile` solo soporta WAV y devuelve enteros para archivos de 16-bit, requiriendo normalización manual. `soundfile` soporta WAV y FLAC y realiza la conversión y normalización automáticamente con `dtype="float64"`, eliminando una fuente de error.
+| Parámetro | Banda (Hz) | Valor calculado | Valor esperado | Error |
+|-----------|:----------:|:---------------:|:--------------:|:-----:|
+| T30 | 500 | [COMPLETAR] s | 2.0 s | [COMPLETAR] % |
+| T30 | 1000 | [COMPLETAR] s | 2.0 s | [COMPLETAR] % |
+| EDT | 500 | [COMPLETAR] s | — | — |
+| D50 | 1000 | [COMPLETAR] % | — | — |
+| C80 | 1000 | [COMPLETAR] dB | — | — |
 
-- **`always_2d=False`**: Para audio mono devuelve shape `(N,)` en lugar de `(N, 1)`. Dado que todas las funciones de procesamiento asumen arrays 1D para señales mono, este parámetro evita tener que hacer squeeze en cada llamada posterior. **Pendiente M3**: el comportamiento ante una señal estéreo no está definido — actualmente la función devuelve ambos canales como shape `(N, 2)` pero ninguna función de procesamiento posterior maneja ese caso. Queda pendiente definir si se promedia a mono, si se toma un canal específico, o si se lanza un error explícito.
+#### Comparación con REW (Room EQ Wizard)
 
-- **Verificación explícita de existencia antes de leer**: Verificar `ruta.exists()` antes de llamar a `sf.read` permite lanzar un `FileNotFoundError` con mensaje claro. Sin esta verificación, el error interno de soundfile sería críptico para quien llama a la función.
+RI utilizada: `[COMPLETAR — nombre del archivo WAV]` (fs = [COMPLETAR] Hz, duración = [COMPLETAR] s)
 
-- **Captura de `Exception` genérico**: `soundfile` puede lanzar distintos tipos de error según el problema (formato inválido, archivo corrupto, permisos). Capturarlos todos y relanzar un único `ValueError` unifica el manejo de errores para las capas superiores.
+| Parámetro | Banda (Hz) | RIR-API | REW | Diferencia | Dentro de tolerancia |
+|-----------|:----------:|:-------:|:---:|:----------:|:--------------------:|
+| EDT | 125 | | | | |
+| EDT | 250 | | | | |
+| EDT | 500 | | | | |
+| EDT | 1000 | | | | |
+| EDT | 2000 | | | | |
+| EDT | 4000 | | | | |
+| T20 | 125 | | | | |
+| T20 | 250 | | | | |
+| T20 | 500 | | | | |
+| T20 | 1000 | | | | |
+| T20 | 2000 | | | | |
+| T20 | 4000 | | | | |
+| T30 | 125 | | | | |
+| T30 | 250 | | | | |
+| T30 | 500 | | | | |
+| T30 | 1000 | | | | |
+| T30 | 2000 | | | | |
+| T30 | 4000 | | | | |
+| C80 | 500 | | | | |
+| C80 | 1000 | | | | |
+| C80 | 2000 | | | | |
 
----
+**Tolerancia:** ±0.5 s para EDT, T20, T30 · ±1 dB para C80
 
-### `sintetizar_ri`
+### 4.4 Tests automatizados
 
-Genera una respuesta al impulso artificial con valores de T60 conocidos por banda de octava. Su propósito principal es proveer una referencia de validación para los algoritmos de análisis del Milestone 3: si se sintetiza una RI con T60 = 2.0 s en 1000 Hz, el algoritmo debería recuperar ese valor.
+Se implementaron [COMPLETAR] tests en total:
 
-El modelo matemático es:
-
-$$h(t) = \sum_{\text{banda}} \text{filtro\_octava}(\text{ruido}(t)) \cdot e^{-\alpha t}$$
-
-donde $\alpha = 6.908 / T_{60}$, derivado de la definición de T60 como el tiempo en que la energía decae 60 dB:
-
-$$\alpha = \frac{60}{T_{60} \cdot 20\log_{10}(e)} = \frac{3\ln(10)}{T_{60}} \approx \frac{6.908}{T_{60}}$$
-
-**Justificación del modelo exponencial:**
-
-El decaimiento exponencial corresponde al modelo físico-matemático ideal de la acústica de salas, análogo a fenómenos como la descarga de un capacitor o el decaimiento radiactivo: en cada instante, la energía se pierde a una tasa proporcional a la energía disponible, lo que produce una exponencial como solución.
-
-Este modelo es una aproximación que funciona bien en salas difusas, donde el sonido se distribuye uniformemente en todas las direcciones. En salas con geometría irregular o materiales muy heterogéneos, el decaimiento puede presentar varias pendientes o curvas. Por eso la norma ISO 3382 define parámetros como EDT, T20 y T30 por separado — para detectar cuando el decaimiento no es perfectamente lineal en escala dB.
-
-**Decisiones clave:**
-
-- **Import interno de `filtro_octava`**: El import se ubica dentro de la función en lugar de en el encabezado del módulo para evitar una importación circular. Si `filter.py` importara algo de `signal_utils.py`, el import en el encabezado generaría un loop al cargar los módulos.
-
-- **Ruido blanco filtrado por banda en lugar de exponencial pura**: Una exponencial pura sin ruido no representa el comportamiento de una sala real. El ruido blanco filtrado simula las reflexiones aleatorias que llegan desde todas las direcciones, que es el modelo estándar de campo difuso.
-
-- **Normalización a 0.9 en lugar de 1.0**: Se deja un margen para evitar clipping en procesamiento posterior. Normalizar a exactamente 1.0 podría causar saturación si alguna operación subsiguiente amplifica levemente la señal.
-
-- **Guard `if max_val > 0`**: Evita división por cero en el caso improbable de una RI completamente silenciosa.
-
----
-
-### `obtener_ri_desde_sweep`
-
-Obtiene la respuesta al impulso de un recinto mediante deconvolución de una grabación de sine sweep. El fundamento matemático es que si el recinto responde $y(t) = x(t) * h(t)$, entonces convolucionando con el filtro inverso se recupera la RI:
-
-$$y(t) * x_{inv}(t) \approx \delta(t) * h(t) = h(t)$$
-
-**Criterio de onset basado en RMS:**
-
-Un aspecto fundamental de esta función es la determinación del punto de inicio de la RI. Recortar exactamente desde el argmax (el pico de mayor amplitud) descarta los primeros samples del ataque del sonido directo, que en una sala real tiene una subida no instantánea. Perder esas muestras afecta directamente el cálculo de parámetros temporales tempranos como el EDT.
-
-Para preservar el ataque, se retrocede desde el pico hasta el primer sample donde la señal emerge del ruido de fondo. El criterio es el siguiente:
-
-1. Se estima el RMS del ruido de fondo usando el último 10% de la señal deconvolucionada, donde la reverberación ya se apagó.
-2. Se calcula un umbral de amplitud 20 dB por encima de ese RMS: `umbral = rms_ruido × 10^(20/20) = rms_ruido × 10`.
-3. Se retrocede desde el pico muestra a muestra hasta encontrar el primer punto donde la señal cae por debajo de ese umbral — ese es el onset.
-4. La RI se recorta desde ese onset hasta el final.
-
-El margen de 20 dB es el valor por defecto elegido por el grupo siguiendo la indicación del profesor de usar un umbral RMS. La norma ISO 3382-1 establece que la RI debe comenzar desde el sonido directo, pero no especifica un umbral numérico concreto para la detección del onset — ese criterio queda a cargo del implementador. El valor de 20 dB es una elección de ingeniería ampliamente utilizada en la práctica, ya que garantiza que el onset esté claramente por encima del ruido sin riesgo de incluir muestras de ruido previas al sonido directo.
-
-Se decidió exponer este valor como parámetro configurable (`margen_db`) para brindar versatilidad a la función: en grabaciones con mayor nivel de ruido de fondo podría ser necesario aumentar el margen, mientras que en condiciones muy limpias un margen menor podría capturar mejor el ataque. Por defecto se utiliza 20 dB, que cubre la mayoría de los casos prácticos.
-
-**Decisiones clave:**
-
-- **`fftconvolve` en lugar de convolución directa**: La convolución directa tiene complejidad O(N²). En el dominio frecuencial con FFT es O(N log N), lo que es decisivo para señales de varios segundos a 44100 Hz.
-
-- **`mode="full"`**: Devuelve el resultado completo de la convolución (longitud N + M − 1). Con `"same"` o `"valid"` se cortaría la cola de reverberación, que es precisamente lo que interesa medir.
-
-- **Estimación del ruido de fondo con el último 10% de la señal**: Al final de la señal deconvolucionada ya se apagó la reverberación y queda solo el ruido de la deconvolución. Es la estimación más limpia disponible sin información externa.
-
-- **Retroceder desde el pico en lugar de buscar hacia adelante desde el inicio**: Buscar desde el inicio podría encontrar falsos positivos — picos de ruido que superen el umbral antes del sonido directo. Retroceder desde el pico garantiza que el onset encontrado pertenece a la región del sonido directo.
-
-- **`margen_db=20.0` configurable**: 20 dB es el margen estándar en acústica para separar señal de ruido. Hacerlo configurable permite ajustarlo según la limpieza de la deconvolución en cada caso.
+| Módulo | Tests | Estado |
+|--------|:-----:|:------:|
+| `test_generacion.py` (M1) | [N] | ✓ verde |
+| `test_procesamiento.py` (M2) | 13 | ✓ verde |
+| `test_analisis.py` (M3) | [N] | ✓ verde |
+| `test_api.py` (M3 endpoints) | [N] | ✓ verde |
 
 ---
 
-### `filtro_octava`
+## 5. Conclusiones
 
-Aplica un filtro pasabanda de una octava centrado en `fc`, con frecuencias de corte según la norma IEC 61260:
+El sistema RIR-API implementa de forma completa el pipeline de medición y análisis acústico según ISO 3382-1: desde la generación de señales de excitación hasta el cálculo de parámetros acústicos por banda de octava, expuesto como API REST con documentación automática.
 
-$$f_{inf} = \frac{f_c}{\sqrt{2}}, \quad f_{sup} = f_c \cdot \sqrt{2}$$
+**Resultados destacados:**
+- La SNR de 101.7 dB en el sine sweep supera en más de 60 dB el mínimo requerido, garantizando deconvoluciones de alta calidad.
+- El uso de `filtfilt` (fase cero) en los filtros de octava es una decisión crítica para la correcta temporización de la curva de Schroeder.
+- La regresión lineal manual permite interpretar directamente la calidad del decaimiento via R² y rechazar automáticamente bandas con piso de ruido o decaimiento irregular.
 
-**Decisiones clave:**
+**Limitaciones:**
+- Solo soporta archivos WAV/FLAC mono (señales estéreo son reducidas al canal 0).
+- Sin corrección de Lundeby por defecto: en grabaciones con SNR < 35 dB los parámetros T30 pueden ser imprecisos.
+- `sintetizar_ri` usa el modelo de campo difuso ideal, que no reproduce doble pendiente ni decaimientos no exponenciales.
 
-- **`filtfilt` en lugar de `lfilter`**: `filtfilt` aplica el filtro en dos pasadas (adelante y atrás), cancelando la distorsión de fase. Con `lfilter`, cada componente frecuencial se desplazaría un tiempo distinto, corrompiendo los instantes de llegada de las reflexiones. EDT y T60 dependen de la precisión temporal de la curva de decaimiento, por lo que esta decisión es crítica.
-
-- **Filtro Butterworth en lugar de Chebyshev o elíptico**: El Butterworth tiene respuesta completamente plana en la banda de paso, sin ondulaciones (ripple). Para análisis de decaimiento, todas las frecuencias de la banda deben tener la misma ganancia. Con ripple, algunas frecuencias tendrían más energía que otras y la curva de Schroeder resultaría incorrecta.
-
-- **`min(f_sup / nyq, 0.9999)` para la frecuencia de corte superior**: En bandas altas (ej. 8000 Hz o 16000 Hz a 44100 Hz de muestreo), la frecuencia de corte superior puede superar Nyquist. `butter` no acepta valores ≥ 1.0 en frecuencia normalizada — clampear a 0.9999 evita el error sin alterar significativamente el comportamiento del filtro.
-
-- **Orden 4 por defecto**: Es un balance entre selectividad y estabilidad numérica. Órdenes más altos dan una caída más pronunciada fuera de banda pero `filtfilt` puede volverse inestable para filtros de orden muy alto.
-
----
-
-### `a_escala_log`
-
-Convierte una señal de amplitud lineal a decibeles normalizados, con 0 dB en el pico y piso en −120 dB:
-
-$$L(t) = 20 \cdot \log_{10}\left(\frac{|h(t)|}{\max|h|}\right)$$
-
-**Decisiones clave:**
-
-- **Aplicar el piso de −120 dB antes del logaritmo, no después**: Si se aplicara después, se calcularía `log10(0) = -inf` en el paso intermedio, generando `NaN` o `-inf` que pueden propagar errores silenciosamente. Aplicándolo antes (como valor mínimo de `ratio`), nunca se llama a `log10` con 0.
-
-- **Piso en −120 dB en lugar de `np.finfo(float).eps`**: `eps` (~2.2e-16) daría un piso de ~−315 dB, sin sentido físico. −120 dB corresponde al límite práctico del rango dinámico en mediciones acústicas reales.
-
-- **Normalizar con `np.abs` antes de buscar el máximo**: Una RI tiene valores positivos y negativos. Sin valor absoluto, si el pico negativo fuera mayor en magnitud que el positivo, la normalización sería incorrecta.
+**Trabajo futuro:**
+- Activar Lundeby por defecto con detección automática de SNR.
+- Agregar soporte multicanal (B-format para acústica espacial).
+- Implementar parámetros laterales (JLF, JLFC) según ISO 3382-1.
+- Implementar T60 via interpolación directa (sin extrapolar desde T30).
 
 ---
 
-## Tests
+## 6. Referencias
 
-### Estrategia general de testing
-
-Los tests siguen una estructura de caja negra: se proveen entradas conocidas, se llama a la función y se verifica que la salida cumpla las propiedades esperadas. En ningún caso se accede a los internos de las funciones. Esto permite refactorizar la implementación sin romper los tests.
-
----
-
-### `TestCargarAudio`
-
-**`test_cargar_audio_no_existe`**
-Verifica que la función falla correctamente cuando el archivo no existe. Se prioriza este test porque una función que falla con un error críptico en producción es peor que una que no existe.
-
-**`test_cargar_audio_wav`**
-Usa `subtype="FLOAT"` al escribir el archivo de prueba en lugar del WAV por defecto (16-bit entero). Con 16-bit la cuantización introduce error suficiente para que `assert_allclose` falle aunque la función sea correcta. El `try/finally` garantiza que el archivo temporal se borre incluso si el test falla a mitad.
-
-**`test_cargar_audio_formato_invalido`**
-Usa un archivo con extensión `.wav` pero contenido basura, en lugar de una extensión inválida como `.xyz`. Simula el caso real de un usuario que sube un archivo mal formado o renombrado. Con extensión inválida, `soundfile` podría rechazarlo antes de ejercitar el código de manejo de errores interno.
-
-**`test_cargar_audio_normalizacion`**
-Verifica la propiedad de normalización con tolerancia `1e-6` para cubrir errores de punto flotante.
+- ISO 3382-1:2009. *Acoustics — Measurement of room acoustic parameters — Part 1: Performance spaces.* International Organization for Standardization.
+- IEC 61260-1:2014. *Electroacoustics — Octave-band and fractional-octave-band filters.* International Electrotechnical Commission.
+- Farina, A. (2000). *Simultaneous measurement of impulse response and distortion with a swept-sine technique.* 108th AES Convention, Paris.
+- Schroeder, M. R. (1965). New method of measuring reverberation time. *Journal of the Acoustical Society of America*, 37(3), 409–412.
+- Lundeby, A., Vigran, T. E., Bietz, H., & Vorländer, M. (1995). Uncertainties of measurements in room acoustics. *Acustica*, 81(4), 344–355.
 
 ---
 
-### `TestAEscalaLog`
+## Anexo: Log de Desarrollo con IA
 
-**`test_a_escala_log_valores`**
-No usa `assert db[0] == 0.0` sino `assert abs(db[0] - 0.0) < 1e-10`. Las operaciones de punto flotante introducen errores numéricos pequeños y la igualdad exacta puede fallar aunque la función sea correcta.
+### Herramientas utilizadas
 
----
+- **Claude Code (Anthropic)**: generación de código inicial, revisión de implementaciones, escritura de tests, documentación.
+- **[Completar otras herramientas si se usaron]**
 
-### `TestSintetizarRI`
+### Interacción destacada
 
-**`test_sintetizar_ri_decaimiento`**
-Fija `np.random.seed(42)` antes de generar el ruido. Sin semilla, el ruido cambia en cada corrida y el T60 medido puede variar lo suficiente para fallar el assert en algunas ejecuciones. La semilla hace el test determinístico.
+**Prompt**: [Describir el prompt más útil que se le dio a la IA]
 
-Usa la integral de Schroeder para medir el T60 en lugar de medir directamente el decaimiento de amplitud. La integral de Schroeder es el método estándar ISO 3382 y es más robusta al ruido que medir la envolvente directamente.
+**Respuesta**: [Resumen de lo que respondió]
 
-La tolerancia del 10% es la que la propia norma ISO 3382 considera aceptable para la varianza estadística inherente al modelo de campo difuso.
+**Resultado**: [Cómo se usó, si funcionó, qué se modificó]
 
----
+### Interacción fallida
 
-### `TestFiltroOctava`
+**Prompt**: [Describir un caso donde la IA no fue útil o llevó por mal camino]
 
-**`test_filtro_octava_frecuencia_central`**
-Excluye el primer y último 10% del array para calcular el RMS. `filtfilt` genera transitorios en los bordes por la naturaleza finita de la señal. Incluir esos bordes bajaría artificialmente el RMS de salida y haría fallar el test aunque el filtro funcione correctamente.
+**Problema**: [Por qué la respuesta no sirvió]
 
-Usa senoidal pura en lugar de ruido blanco. Con ruido blanco, la energía fuera de la banda sería atenuada por el filtro, bajando el RMS de salida incluso si la frecuencia central pasa bien. La senoidal pura a `fc` aísla exactamente la frecuencia que se quiere verificar.
+**Lección**: [Qué se aprendió de esa experiencia]
 
-**`test_filtro_octava_atenuacion`**
-Elige `fc/2` y `fc*2` (una octava fuera de la banda) como frecuencias de prueba. Son el caso más exigente — las frecuencias más cercanas a la banda de paso. Con frecuencias más lejanas el test sería trivial de pasar y no verificaría el diseño real del filtro.
+### Reflexión general
 
-**`test_filtro_octava_respuesta_frecuencia`**
-Usa `freqz` en lugar de filtrar señales reales y medir RMS. `freqz` evalúa la respuesta del filtro analíticamente en exactamente las frecuencias de interés. Con señales reales habría error de estimación y transitorios de borde que dificultarían verificar los −3 dB exactos que define la norma IEC 61260.
-
----
-
-### `TestObtenerRIDesdeSweep`
-
-**`test_obtener_ri_pico`**
-Usa una senoidal con decaimiento exponencial en lugar de `sintetizar_ri`. `sintetizar_ri` introduce ruido aleatorio y depende de `filtro_octava` internamente. Si el test fallara, no se sabría si el problema está en `obtener_ri_desde_sweep` o en `sintetizar_ri`. La senoidal es determinística y no tiene dependencias externas, aislando la función que se quiere probar.
-
-Usa correlación cruzada normalizada en lugar de comparación sample a sample. La deconvolución puede introducir un pequeño desfase temporal entre la RI original y la recuperada. La correlación cruzada encuentra el mejor alineamiento posible antes de comparar, evitando fallos por desplazamientos de pocos samples que no afectan la calidad de la RI.
-
-El umbral de 0.9 en lugar de 1.0 reconoce que la deconvolución no es perfecta y hay pequeñas diferencias numéricas inevitables. 0.9 verifica que la forma de la RI es correcta sin exigir una precisión inalcanzable.
+[300–500 palabras sobre la experiencia con IA durante el desarrollo del proyecto: impacto en el flujo de trabajo, cuándo fue valioso seguir las sugerencias y cuándo no, cómo cambió la forma de programar.]

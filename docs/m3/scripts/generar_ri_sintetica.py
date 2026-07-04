@@ -3,7 +3,7 @@
 Genera RIs con distintos T60 por banda y las guarda como WAV en docs/m3/.
 
 Uso:
-    uv run python docs/m3/generar_ri_sintetica.py
+    uv run python docs/m3/scripts/generar_ri_sintetica.py
 """
 
 import sys
@@ -12,10 +12,10 @@ from pathlib import Path
 import numpy as np
 import soundfile as sf
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 from app.services.signal_utils import sintetizar_ri  # noqa: E402
 
-SALIDA = Path(__file__).parent
+SALIDA = Path(__file__).parent.parent
 FS = 44100
 
 
