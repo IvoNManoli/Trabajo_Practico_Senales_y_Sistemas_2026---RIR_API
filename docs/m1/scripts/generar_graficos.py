@@ -1,7 +1,7 @@
 """Genera los graficos de validacion del Milestone 1.
 
 Ejecutar desde la raiz del proyecto:
-    uv run python docs/m1/generar_graficos.py
+    uv run python docs/m1/scripts/generar_graficos.py
 
 Genera tres PNGs en docs/m1/:
     - ruido_rosa_espectro.png
@@ -21,12 +21,12 @@ from scipy.signal import fftconvolve, welch
 
 # Asegurar imports del proyecto
 import sys
-sys.path.insert(0, str(Path(__file__).parents[2]))
+sys.path.insert(0, str(Path(__file__).parents[3]))
 
 from app.services.pink_noise import generar_ruido_rosa
 from app.services.sine_sweep import generar_sine_sweep
 
-OUTPUT_DIR = Path(__file__).parent / "imagenes"
+OUTPUT_DIR = Path(__file__).parent.parent / "imagenes"
 OUTPUT_DIR.mkdir(exist_ok=True)
 FS = 44100
 

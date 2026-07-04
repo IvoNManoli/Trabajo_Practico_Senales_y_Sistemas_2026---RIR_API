@@ -8,14 +8,14 @@ import numpy as np
 import soundfile as sf
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-ROOT_DIR = os.path.abspath(os.path.join(SCRIPT_DIR, "../.."))
+ROOT_DIR = os.path.abspath(os.path.join(SCRIPT_DIR, "../../.."))
 sys.path.insert(0, ROOT_DIR)
 
 from app.services.acoustic_parameters import calcular_parametros_acusticos
 from app.services.signal_utils import cargar_audio
 
 BANDAS = [125, 250, 500, 1000, 2000, 4000]
-OUT_DIR = os.path.join(SCRIPT_DIR, "imagenes")
+OUT_DIR = os.path.join(SCRIPT_DIR, "../imagenes")
 os.makedirs(OUT_DIR, exist_ok=True)
 
 # Carga de RIs

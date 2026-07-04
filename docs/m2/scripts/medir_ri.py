@@ -5,7 +5,7 @@ por el micrófono. Guarda la grabación y el filtro inverso como archivos WAV
 para procesarlos luego con obtener_ri_desde_sweep.
 
 Ejecutar desde la raiz del proyecto:
-    uv run python docs/m2/medir_ri.py
+    uv run python docs/m2/scripts/medir_ri.py
 
 Los archivos se guardan en docs/m2/mediciones/.
 """
@@ -19,7 +19,7 @@ import numpy as np
 import soundfile as sf
 from scipy.signal import fftconvolve
 
-ROOT_DIR = Path(__file__).parents[2]
+ROOT_DIR = Path(__file__).parents[3]
 sys.path.insert(0, str(ROOT_DIR))
 
 from app.services.grabacion_utils import reproducir_y_grabar
@@ -39,7 +39,7 @@ DURACION_GRABACION = DURACION_SWEEP + SILENCIO_POST
 # =========================
 # CARPETA DE SALIDA
 # =========================
-out_dir = Path(__file__).parent / "mediciones"
+out_dir = Path(__file__).parent.parent / "mediciones"
 out_dir.mkdir(exist_ok=True)
 
 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")

@@ -8,7 +8,7 @@ import numpy as np
 import soundfile as sf
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-ROOT_DIR = os.path.abspath(os.path.join(SCRIPT_DIR, "../.."))
+ROOT_DIR = os.path.abspath(os.path.join(SCRIPT_DIR, "../../.."))
 sys.path.insert(0, ROOT_DIR)
 
 from app.services.acoustic_parameters import suavizar_signal
@@ -17,7 +17,7 @@ from app.services.signal_utils import cargar_audio
 
 BANDAS = [500, 4000, 16000]
 
-path_elv = os.path.join(SCRIPT_DIR, "elveden_hall", "elveden_hall.wav")
+path_elv = os.path.join(SCRIPT_DIR, "../elveden_hall", "elveden_hall.wav")
 ri, fs = cargar_audio(path_elv)
 if ri.ndim > 1:
     ri = ri.mean(axis=1)
@@ -36,13 +36,13 @@ for fc in BANDAS:
     plt.grid(alpha=0.3)
     plt.tight_layout()
 
-    out = os.path.join(SCRIPT_DIR, "imagenes", f"hilbert_{fc}hz.png")
+    out = os.path.join(SCRIPT_DIR, "../imagenes", f"hilbert_{fc}hz.png")
     plt.savefig(out, dpi=150)
     plt.close()
     print("Guardado:", out)
 
 # RI procesada en 4 kHz
-mediciones_dir = os.path.join(SCRIPT_DIR, "mediciones")
+mediciones_dir = os.path.join(SCRIPT_DIR, "../mediciones")
 archivos_proc = sorted(
     [f for f in os.listdir(mediciones_dir) if f.startswith("ri_procesada_")],
     reverse=True,
@@ -64,7 +64,7 @@ plt.xlim(0, 0.4)
 plt.grid(alpha=0.3)
 plt.tight_layout()
 
-out = os.path.join(SCRIPT_DIR, "imagenes", "hilbert_procesada_4000hz.png")
+out = os.path.join(SCRIPT_DIR, "../imagenes", "hilbert_procesada_4000hz.png")
 plt.savefig(out, dpi=150)
 plt.close()
 print("Guardado:", out)
