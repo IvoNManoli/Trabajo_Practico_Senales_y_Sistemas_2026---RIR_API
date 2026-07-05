@@ -65,6 +65,52 @@ class TestCargarAudio:
         finally:
             os.unlink(ruta)
 
+    def test_cargar_audio_estereo_elige_canal_l_por_defecto(self):
+        """Verifica que un archivo estereo devuelve el canal L (indice 0) por defecto."""
+        canal_izq = np.array([0.2, 0.4, -0.4, 0.8, -0.8], dtype=np.float32)
+        canal_der = np.array([0.0, 0.4, -0.4, 0.4, -0.4], dtype=np.float32)
+        senal_estereo = np.column_stack([canal_izq, canal_der])
+        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
+            ruta = f.name
+        try:
+            sf.write(ruta, senal_estereo, 44100, subtype="FLOAT")
+            audio, fs = cargar_audio(ruta)
+            assert audio.ndim == 1
+            assert audio.shape[0] == senal_estereo.shape[0]
+            esperado = canal_izq / np.max(np.abs(canal_izq)) * 0.9
+            np.testing.assert_allclose(audio, esperado, atol=1e-5)
+        finally:
+            os.unlink(ruta)
+
+    def test_cargar_audio_estereo_elige_canal_r(self):
+        """Verifica que se puede pedir explicitamente el canal R."""
+        canal_izq = np.array([0.2, 0.4, -0.4, 0.8, -0.8], dtype=np.float32)
+        canal_der = np.array([0.0, 0.4, -0.4, 0.4, -0.4], dtype=np.float32)
+        senal_estereo = np.column_stack([canal_izq, canal_der])
+        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
+            ruta = f.name
+        try:
+            sf.write(ruta, senal_estereo, 44100, subtype="FLOAT")
+            audio, fs = cargar_audio(ruta, canal="R")
+            esperado = canal_der / np.max(np.abs(canal_der)) * 0.9
+            np.testing.assert_allclose(audio, esperado, atol=1e-5)
+        finally:
+            os.unlink(ruta)
+
+    def test_cargar_audio_canal_invalido(self):
+        """Verifica que un canal invalido lanza ValueError."""
+        senal_estereo = np.zeros((100, 2))
+        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
+            ruta = f.name
+        try:
+            sf.write(ruta, senal_estereo, 44100, subtype="FLOAT")
+            with pytest.raises(ValueError):
+                cargar_audio(ruta, canal="X")
+            with pytest.raises(ValueError):
+                cargar_audio(ruta, canal=5)
+        finally:
+            os.unlink(ruta)
+
 
 class TestAEscalaLog:
     """Tests para la funcion a_escala_log."""

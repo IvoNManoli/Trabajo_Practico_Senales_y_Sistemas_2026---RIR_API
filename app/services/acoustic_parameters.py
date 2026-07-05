@@ -213,6 +213,29 @@ def calcular_parametros_acusticos(
     return resultado
 
 
+def _primer_cruce_sostenido(
+    energia_db: np.ndarray, umbral: float, minimo_indice: int, consecutivos: int
+) -> int:
+    """Busca el primer intervalo donde la energia se mantiene bajo ``umbral``.
+
+    Exige ``consecutivos`` intervalos seguidos por debajo del umbral (en vez de
+    aceptar el primero que lo cruce) para no confundir un nulo modal transitorio
+    -tipico del batido entre modos en bandas de baja frecuencia con poca densidad
+    modal, como 125 Hz- con el verdadero cruce hacia el piso de ruido. Tampoco
+    considera candidatos antes de ``minimo_indice``, para no aceptar un cruce
+    basado en muy pocos puntos.
+
+    Retorna el ultimo indice (``len(energia_db) - 1``) si no encuentra ningun
+    cruce sostenido.
+    """
+    bajo_umbral = energia_db <= umbral
+    n = len(bajo_umbral)
+    for i in range(minimo_indice, n - consecutivos + 1):
+        if bajo_umbral[i : i + consecutivos].all():
+            return i
+    return n - 1
+
+
 def metodo_lundeby(ri: np.ndarray, fs: int) -> tuple[int, float]:
     """Determina el punto de truncamiento de la RI usando el metodo de Lundeby.
 
@@ -250,9 +273,24 @@ def metodo_lundeby(ri: np.ndarray, fs: int) -> tuple[int, float]:
     energia_int = np.mean(bloques**2, axis=1)
     t_int = (np.arange(n_intervals) + 0.5) * n_int / fs
 
-    # Estimacion inicial del ruido: promedio del ultimo 10% de intervalos
+    # Estimacion inicial del ruido: promedio del ultimo 10% de intervalos.
+    # Se guarda como referencia: es la estimacion mas confiable posible (usa la
+    # cola mas alejada de la fuente) y sirve para detectar reestimaciones
+    # contaminadas por cola reverberante real si el cruce preliminar resulta
+    # espurio (ver mas abajo).
     n_ruido_int = max(1, n_intervals // 10)
     nivel_ruido = float(np.mean(energia_int[-n_ruido_int:]))
+    nivel_ruido_referencia = nivel_ruido
+
+    # Minimo de intervalos antes de aceptar el cruce preliminar (~100 ms) y
+    # cantidad de intervalos consecutivos que deben estar bajo el umbral para
+    # confirmarlo (~50 ms). Sin esto, un nulo modal aislado en los primeros
+    # intervalos (comun en bandas de baja frecuencia con poca densidad modal)
+    # se toma como si fuera el piso de ruido, la regresion preliminar se hace
+    # sobre 2-3 puntos y da una pendiente sin sentido -> truncamiento absurdamente
+    # temprano.
+    min_intervalos_regresion = 10
+    consecutivos_cruce = 5
 
     idx_trunc_int = n_intervals - 1
 
@@ -260,10 +298,10 @@ def metodo_lundeby(ri: np.ndarray, fs: int) -> tuple[int, float]:
         nivel_ruido_db = 10.0 * np.log10(max(nivel_ruido, _EPS))
         energia_db = 10.0 * np.log10(np.maximum(energia_int, _EPS))
 
-        # Cruce preliminar: primer intervalo con energia <= piso de ruido + 10 dB
-        cruces = np.where(energia_db <= nivel_ruido_db + 10.0)[0]
-        idx_cruce = int(cruces[0]) if len(cruces) > 0 else n_intervals - 1
-        if idx_cruce < 2:
+        idx_cruce = _primer_cruce_sostenido(
+            energia_db, nivel_ruido_db + 10.0, min_intervalos_regresion, consecutivos_cruce
+        )
+        if idx_cruce < min_intervalos_regresion:
             break
 
         # Regresion lineal desde el inicio hasta el cruce preliminar
@@ -275,10 +313,16 @@ def metodo_lundeby(ri: np.ndarray, fs: int) -> tuple[int, float]:
         t_trunc = (nivel_ruido_db - ordenada) / pendiente
         nuevo_idx = int(np.clip(round(t_trunc * fs / n_int), 1, n_intervals - 1))
 
-        # Reestimar el piso de ruido con los intervalos tras el truncamiento
+        # Reestimar el piso de ruido con los intervalos tras el truncamiento.
+        # Nunca se acepta una reestimacion mas de 3 dB por encima de la
+        # referencia inicial: el piso de ruido real no deberia variar tanto a
+        # lo largo de la señal, asi que un salto grande indica que nuevo_idx
+        # es demasiado temprano y la ventana esta devorando cola reverberante
+        # real (esto es lo que generaba el bucle de realimentacion positiva
+        # hacia un truncamiento cada vez mas temprano).
         if nuevo_idx < n_intervals - 1:
             nueva_est = float(np.mean(energia_int[nuevo_idx:]))
-            if nueva_est > 0:
+            if 0 < nueva_est <= nivel_ruido_referencia * 2.0:
                 nivel_ruido = nueva_est
 
         if abs(nuevo_idx - idx_trunc_int) <= 1:

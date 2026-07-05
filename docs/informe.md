@@ -257,13 +257,19 @@ Como los tests de este proyecto corren en un entorno sin hardware de audio real,
 
 Los test fundamentales de esta función incluyen a  `test_acepta_senal_mono` , la cual pasa una señal 1D, verifica que el resultado sea un array 1D y que `sd.playrec` se haya llamado con "channels=1". Luego `test_acepta_senal_estereo` ,que pasa una señal 2D de dos canales y comprueba tanto que la grabación siga siendo mono (channels=1) como que el array efectivamente reproducido haya conservado sus dos columnas, es decir, que el armado del preroll y el padding no haya roto la forma de la señal de salida. Uno de los más fundamentales es `test_duracion_correcta`, quien verifica que la longitud de la grabación devuelta coincida, con una tolerancia del 1%, con la duración pedida más el preroll. Por último, `test_error_sin_dispositivo` simula un `sd.PortAudioError` y confirma que la función lo traduce en un "RuntimeError" con un mensaje claro en vez de propagar la excepción de bajo nivel.
 
-
+Un aspecto fundamental de esta función es que no se incluye como servicio de la API. Esto es debido a que el acceso del servidor al micrófono y los parlantes del cliente requiere de ser informado y debe solicitar los permisos adecuados para hacerlo. Si el software pudiese acceder sin permisos se trataría de un malware, lo cual claramente no es la intención del proyecto. Dado que el correcto abordaje de esta temática es un tema de desconocimiento de los autores, se decidió limitar la ejecución de esta función vía script. 
 
 ### 3.4 Milestone 2 — Procesamiento de la RI
 
-#### `cargar_audio`
+## 3.4.2 Carga de audio y respuesta al impulso
 
-Carga WAV o FLAC y devuelve float64 normalizado entre −1 y 1.
+A la hora de analizar una respuesta al impulso es necesario brindar un servicio que permita cargar el audio al servidor. Esa es la función de `cargar_audio()`, que recibe una ruta a un archivo (para ejecutarlo vía script) o directamente un objeto file-like, y devuelve una tupla con la señal como array de Numpy en float64 y su frecuencia de muestreo. Internamente usa `soundfile.read()` para soportar tanto WAV como FLAC en un único llamado, que ya se encarga de la conversión de formato y de dejar la señal en punto flotante. Antes de leer, si la entrada es una ruta en disco se verifica explícitamente que el archivo exista, lanzando un "FileNotFoundError" con un mensaje claro en vez de dejar que falle más abajo con un error críptico de la librería; cualquier otro problema de lectura (formato no soportado, archivo corrupto) se recaptura como "ValueError". Finalmente, la señal se normaliza dividiendo por su valor absoluto máximo y escalando a 0.9.
+
+Dado que el procesamiento de RI requiere señales mono, si el archivo cargado es estéreo (o multicanal), la función extrae un único canal antes de normalizar, devolviendo siempre un array 1D. Cuál canal extraer es un parámetro de la función (`canal`, por defecto `"L"`), que acepta `"L"`, `"R"` o directamente un índice entero de canal; si se pide un canal que no existe, se lanza un `ValueError`. Esto es necesario porque el resto del pipeline de procesamiento está diseñado para trabajar sobre una única señal temporal, no sobre un array con un eje de canales.
+
+La primera versión de esta función promediaba los canales entre sí ("downmix") en vez de elegir uno solo. Se descartó ese enfoque porque promediar dos señales que llegaron con distinto desfasaje temporal (por ejemplo, dos micrófonos a distinta distancia de las reflexiones del recinto) genera cancelaciones en ciertas frecuencias — un filtro peine — que distorsionarían la RI antes de siquiera empezar el análisis. Elegir un solo canal evita ese problema por completo, al costo de no aprovechar la información del canal descartado.
+
+Un objeto file-like ("similar a un archivo") es cualquier objeto de Python que se comporta como un archivo abierto en disco sin serlo necesariamente, aunque los datos vivan en otro lado, por ejemplo en memoria. El caso típico acá es "io.BytesIO", que envuelve bytes ya cargados en RAM, como el contenido de un archivo subido a la API para que pueda leerse con la misma interfaz que un archivo real. Se decidió Esto le permite a `cargar_audio()` aceptar tanto una ruta en disco como el contenido de un upload HTTP sin necesidad de guardarlo primero a un archivo temporal.
 
 **Decisiones clave:**
 - `soundfile` en lugar de `scipy.io.wavfile`: soporta WAV y FLAC, realiza la conversión y normalización automáticamente.
