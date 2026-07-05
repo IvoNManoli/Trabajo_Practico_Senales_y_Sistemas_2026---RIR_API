@@ -31,7 +31,10 @@ sys.path.insert(0, ROOT_DIR)
 import soundfile as sf
 
 from app.services.acoustic_parameters import suavizar_signal
+from app.services.filter import filtro_octava
 from app.services.signal_utils import a_escala_log, cargar_audio, sintetizar_ri
+
+FC_ENVOLVENTE = 1000
 
 BANDAS = [125, 250, 500, 1000, 2000, 4000]
 FS_REF = 44100
@@ -68,14 +71,15 @@ print("OK Maes Howe OK:", ri_m.shape, fs_m)
 
 
 # =========================
-# PLOT ELVEDEN — IR
+# PLOT ELVEDEN — IR filtrada a 4 kHz, envolvente de Hilbert
 # =========================
-t_e = np.arange(len(ri_e)) / fs_e
-env_e = np.sqrt(suavizar_signal(ri_e, int(0.08 * fs_e)))
+ri_e_banda = filtro_octava(ri_e, fc=FC_ENVOLVENTE, fs=fs_e)
+t_e = np.arange(len(ri_e_banda)) / fs_e
+env_e = suavizar_signal(ri_e_banda, "hilbert")
 
 plt.figure(figsize=(10, 4))
 plt.plot(t_e, env_e)
-plt.title("Elveden Hall RI (Envolvente)")
+plt.title(f"Elveden Hall RI — banda {FC_ENVOLVENTE} Hz (envolvente de Hilbert)")
 plt.xlabel("Tiempo [s]")
 plt.ylabel("Amplitud")
 plt.xlim(0, 5)
@@ -89,17 +93,18 @@ print("OK Guardado:", out_file)
 
 
 # =========================
-# PLOT MAES HOWE — IR
+# PLOT MAES HOWE — IR filtrada a 4 kHz, envolvente de Hilbert
 # =========================
-t_m = np.arange(len(ri_m)) / fs_m
-env_m = np.sqrt(suavizar_signal(ri_m, int(0.01 * fs_m)))
+ri_m_banda = filtro_octava(ri_m, fc=FC_ENVOLVENTE, fs=fs_m)
+t_m = np.arange(len(ri_m_banda)) / fs_m
+env_m = suavizar_signal(ri_m_banda, "hilbert")
 
 plt.figure(figsize=(10, 4))
 plt.plot(t_m, env_m)
-plt.title("Maes Howe RI (Envolvente)")
+plt.title(f"Maes Howe RI — banda {FC_ENVOLVENTE} Hz (envolvente de Hilbert)")
 plt.xlabel("Tiempo [s]")
 plt.ylabel("Amplitud")
-plt.xlim(0, 0.5)
+plt.xlim(0, 0.2)
 plt.ylim(bottom=0)
 plt.grid()
 
@@ -179,7 +184,6 @@ else:
     _w = int(0.01 * fs_med)
     env_full_recortada = np.sqrt(suavizar_signal(ri_full_recortada, _w))
     env_full = np.sqrt(suavizar_signal(ri_full, _w))
-    env_proc = np.sqrt(suavizar_signal(ri_proc, _w))
 
     plt.figure(figsize=(10, 4))
     plt.plot(t_full_ms, env_full_recortada, linewidth=0.8, color="steelblue")
@@ -255,6 +259,8 @@ else:
     print("OK Guardado:", out_file)
 
     # RI procesada — t=0 en el onset (ya recortada por obtener_ri_desde_sweep)
+    # Envolvente RMS de banda ancha (usada como Figura 6 en la metodologia)
+    env_proc = np.sqrt(suavizar_signal(ri_proc, _w))
     t_proc_ms = np.arange(len(ri_proc)) / fs_med * 1000
 
     plt.figure(figsize=(10, 4))
@@ -266,6 +272,25 @@ else:
     plt.grid(alpha=0.3)
     plt.tight_layout()
     out_file = os.path.join(out_img, "ri_medida_procesada.png")
+    plt.savefig(out_file, dpi=150)
+    plt.close()
+    print("OK Guardado:", out_file)
+
+    # RI procesada — filtrada en FC_ENVOLVENTE, envolvente de Hilbert
+    # (usada en la validacion de M3/comparacion de RIs, no reemplaza la Figura 6)
+    ri_proc_banda = filtro_octava(ri_proc, fc=FC_ENVOLVENTE, fs=fs_med)
+    env_proc_banda = suavizar_signal(ri_proc_banda, "hilbert")
+    t_proc_banda_ms = np.arange(len(ri_proc_banda)) / fs_med * 1000
+
+    plt.figure(figsize=(10, 4))
+    plt.plot(t_proc_banda_ms, env_proc_banda, linewidth=0.8, color="steelblue")
+    plt.xlabel("Tiempo [ms]")
+    plt.ylabel("Envolvente [amplitud]")
+    plt.title(f"RI de obtener_ri_desde_sweep() — banda {FC_ENVOLVENTE} Hz (envolvente de Hilbert)")
+    plt.xlim(0, 250)
+    plt.grid(alpha=0.3)
+    plt.tight_layout()
+    out_file = os.path.join(out_img, "ri_medida_procesada_banda1k.png")
     plt.savefig(out_file, dpi=150)
     plt.close()
     print("OK Guardado:", out_file)

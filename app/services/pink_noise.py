@@ -20,7 +20,7 @@ def generar_ruido_rosa(duracion: float, fs: int) -> np.ndarray:
     3. Crear un vector de frecuencias correspondiente.
     4. Dividir cada componente por sqrt(f) (omitir f=0 para evitar division por cero).
     5. Aplicar la transformada inversa (np.fft.irfft).
-    6. Normalizar la senal resultante al rango [-1, 1].
+    6. Normalizar la senal resultante al rango [-0.8, 0.8].
 
     Parameters
     ----------
@@ -50,7 +50,6 @@ def generar_ruido_rosa(duracion: float, fs: int) -> np.ndarray:
     espectro_rosa_fft = ruido_fft * factores
     # Aplicar la transformada inversa (np.fft.irfft)
     ruido_rosa = np.fft.irfft(espectro_rosa_fft, n=n_muestras)  # Pasando de frecuencial a temporal
-    # Normalizar la señal resultante al rango [-1, 1].
+    # Normalizar la señal resultante al rango [-0.8, 0.8].
     ruido_rosa_normalizado = ruido_rosa / np.max(np.abs(ruido_rosa)) * 0.8
     return ruido_rosa_normalizado
-

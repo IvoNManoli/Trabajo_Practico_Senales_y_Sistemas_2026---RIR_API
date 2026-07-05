@@ -30,9 +30,11 @@ class TestGenerarRuidoRosa:
         """Verifica que la senal esta normalizada entre -1 y 1."""
         ruido = generar_ruido_rosa(1.0, 44100)
         assert np.max(np.abs(ruido)) <= 1.0
+
     def test_ruido_rosa_pendiente_espectral(self):
         """Verifica la pendiente de caida de la PSD usando el metodo de Welch."""
         from scipy.signal import welch
+
         fs = 44100
         duracion = 4.0
         ruido = generar_ruido_rosa(duracion, fs)
@@ -47,8 +49,10 @@ class TestGenerarRuidoRosa:
 
         pendiente, _ = np.polyfit(log_f, log_psd, 1)
 
-        assert np.isclose(pendiente, -1.0, atol=0.15), \
+        assert np.isclose(pendiente, -1.0, atol=0.15), (
             f"Pendiente espectral incorrecta: {pendiente:.2f}. Se esperaba ~ -1.0"
+        )
+
 
 class TestGenerarSineSweep:
     """Tests para la funcion generar_sine_sweep."""
@@ -69,6 +73,7 @@ class TestGenerarSineSweep:
         expected_length = int(duracion * fs)
         assert len(sweep) == expected_length
         assert len(filtro_inv) == expected_length
+
     def test_convolucion_genera_impulso(self):
         """Verifica que sweep x filtro_inverso produce un impulso con pico > 40 dB sobre el piso."""
         from scipy.signal import fftconvolve
@@ -80,7 +85,7 @@ class TestGenerarSineSweep:
         valor_pico = np.abs(resultado[indice_pico])
 
         mascara = np.ones(len(resultado), dtype=bool)
-        mascara[max(0, indice_pico - 100):indice_pico + 100] = False
+        mascara[max(0, indice_pico - 100) : indice_pico + 100] = False
         piso = np.mean(np.abs(resultado[mascara]))
 
         relacion_db = 20 * np.log10(valor_pico / piso)
@@ -101,27 +106,35 @@ class TestReproducirYGrabar:
         duracion_grabacion = 2.0
         signal_mono = np.zeros(fs)  # 1 segundo de silencio, 1D
 
-        with patch("app.services.grabacion_utils.sd.playrec") as mock_playrec, \
-             patch("app.services.grabacion_utils.sd.wait"):
+        with (
+            patch("app.services.grabacion_utils.sd.playrec") as mock_playrec,
+            patch("app.services.grabacion_utils.sd.wait"),
+        ):
             mock_playrec.return_value = self._make_grabacion(duracion_grabacion, fs)
             resultado = reproducir_y_grabar(signal_mono, fs, duracion_grabacion)
 
         assert isinstance(resultado, np.ndarray)
         assert resultado.ndim == 1
+        assert mock_playrec.call_args.kwargs["channels"] == 1
 
     def test_acepta_senal_estereo(self):
-        """Verifica que la funcion acepta una senal 2D (estereo)."""
+        """Verifica que la funcion acepta una senal 2D (estereo) mientras
+        graba siempre por un solo canal de entrada."""
         fs = 44100
         duracion_grabacion = 2.0
         signal_estereo = np.zeros((fs, 2))  # 1 segundo, 2 canales
 
-        with patch("app.services.grabacion_utils.sd.playrec") as mock_playrec, \
-             patch("app.services.grabacion_utils.sd.wait"):
+        with (
+            patch("app.services.grabacion_utils.sd.playrec") as mock_playrec,
+            patch("app.services.grabacion_utils.sd.wait"),
+        ):
             mock_playrec.return_value = self._make_grabacion(duracion_grabacion, fs)
             resultado = reproducir_y_grabar(signal_estereo, fs, duracion_grabacion)
 
         assert isinstance(resultado, np.ndarray)
         assert resultado.ndim == 1
+        assert mock_playrec.call_args.kwargs["channels"] == 1
+        assert mock_playrec.call_args.args[0].shape[1] == 2
 
     def test_duracion_correcta(self):
         """Verifica que la grabacion tiene la duracion esperada con tolerancia del 1%."""
@@ -130,8 +143,10 @@ class TestReproducirYGrabar:
         signal = np.zeros(fs)
         n_esperado = int(duracion_grabacion * fs)
 
-        with patch("app.services.grabacion_utils.sd.playrec") as mock_playrec, \
-             patch("app.services.grabacion_utils.sd.wait"):
+        with (
+            patch("app.services.grabacion_utils.sd.playrec") as mock_playrec,
+            patch("app.services.grabacion_utils.sd.wait"),
+        ):
             mock_playrec.return_value = self._make_grabacion(duracion_grabacion, fs)
             resultado = reproducir_y_grabar(signal, fs, duracion_grabacion)
 

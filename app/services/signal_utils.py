@@ -11,7 +11,9 @@ import soundfile as sf
 from scipy.signal import fftconvolve
 
 
-def cargar_audio(ruta: str | Path | io.IOBase) -> tuple[np.ndarray, int]:
+def cargar_audio(
+    ruta: str | Path | io.IOBase, canal: str | int = "L"
+) -> tuple[np.ndarray, int]:
     """Carga un archivo de audio y retorna la senal y la frecuencia de muestreo.
 
     Parameters
@@ -19,12 +21,18 @@ def cargar_audio(ruta: str | Path | io.IOBase) -> tuple[np.ndarray, int]:
     ruta : str | Path | io.IOBase
         Ruta al archivo de audio en disco, o un objeto file-like (BytesIO).
         Soporta WAV y FLAC.
+    canal : str | int, optional
+        Canal a extraer si el audio es estereo o multicanal. Acepta "L"
+        (canal 0) o "R" (canal 1), o directamente un indice entero de
+        canal. Por defecto "L". Se ignora si el audio ya es mono.
 
     Returns
     -------
     signal : np.ndarray
-        Senal de audio como float64 normalizada entre -1 y 1.
-        Si el audio es estereo, shape es (n_muestras, n_canales).
+        Senal de audio como float64 normalizada entre -1 y 1, siempre 1D
+        (n_muestras,). Si el archivo es estereo o multicanal, se extrae
+        unicamente el canal indicado (nunca se promedian canales, para
+        evitar cancelaciones por filtro peine entre canales desfasados).
     fs : int
         Frecuencia de muestreo del archivo en Hz.
 
@@ -33,7 +41,8 @@ def cargar_audio(ruta: str | Path | io.IOBase) -> tuple[np.ndarray, int]:
     FileNotFoundError
         Si la ruta especificada no existe en disco.
     ValueError
-        Si el formato no es soportado o el archivo no puede leerse.
+        Si el formato no es soportado, el archivo no puede leerse, o el
+        canal solicitado no existe en el audio.
     """
     if not isinstance(ruta, io.IOBase):
         ruta = Path(ruta)
@@ -43,6 +52,18 @@ def cargar_audio(ruta: str | Path | io.IOBase) -> tuple[np.ndarray, int]:
         audio, fs = sf.read(ruta, dtype="float64", always_2d=False)
     except Exception as exc:
         raise ValueError(f"No se pudo leer el archivo: {ruta}") from exc
+    if audio.ndim > 1:
+        if isinstance(canal, str):
+            indice = {"l": 0, "r": 1}.get(canal.lower())
+            if indice is None:
+                raise ValueError(f"Canal invalido: {canal!r}. Use 'L', 'R' o un indice entero.")
+        else:
+            indice = canal
+        if not 0 <= indice < audio.shape[1]:
+            raise ValueError(
+                f"El audio tiene {audio.shape[1]} canales, no existe el canal {indice}."
+            )
+        audio = audio[:, indice]
     if np.max(np.abs(audio)) > 0:
         audio = audio / np.max(np.abs(audio)) * 0.9
     return audio, int(fs)

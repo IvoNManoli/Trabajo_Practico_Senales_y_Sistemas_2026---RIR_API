@@ -16,7 +16,7 @@ Materia: Señales y Sistemas, carrera Ingeniería de Sonido, UNTREF.
 
 - **M1 (Generación):** completo. Tag `v0.1.0` en main.
 - **M2 (Procesamiento):** completo. Tag `v0.2.0` en main.
-- **M3 (Producto final):** pendiente. Vence 7 de julio de 2026.
+- **M3 (Producto final):** desarrollo completo (funciones, API REST, tests, informe y validación contra REW). **Solo falta el tag `v1.0.0` en main y el release en GitHub con changelog.**
 
 ## M2 — ya implementado
 
@@ -47,99 +47,65 @@ services/  → funciones puras DSP. Entran numpy arrays, salen numpy arrays.
 schemas/   → modelos Pydantic para validación de entrada/salida.
 ```
 
-## M3 — funciones a implementar
+## M3 — ya implementado
 
-Todo va en `app/services/acoustic_parameters.py`. Rama de trabajo: crear `feature/analisis-acustico`.
+Todo en `app/services/acoustic_parameters.py` (más `convolution.py` para la convolución de validación). Funciones completadas:
 
-### `acoustic_parameters.py`
+| Función | Archivo | Estado |
+|---|---|---|
+| `suavizar_signal` | `acoustic_parameters.py` | ✓ |
+| `integral_schroeder` | `acoustic_parameters.py` | ✓ |
+| `regresion_lineal` | `acoustic_parameters.py` | ✓ |
+| `metodo_lundeby` | `acoustic_parameters.py` | ✓ |
+| `calcular_parametros_acusticos` | `acoustic_parameters.py` | ✓ |
+| `convolucionar` | `convolution.py` | ✓ |
 
-```python
-def suavizar_signal(signal: np.ndarray, ventana: int | str = 'hilbert') -> np.ndarray:
-    # Si ventana='hilbert': envolvente instantánea via scipy.signal.hilbert.
-    # Si ventana=int: media móvil de la energía (signal**2) con esa ventana.
-    # Hilbert es preferible: no requiere elegir tamaño de ventana.
+Tests en `tests/test_analisis.py` (19) y `tests/test_convolucion.py` (6): todos en verde.
 
-def integral_schroeder(ri: np.ndarray) -> np.ndarray:
-    # Integración inversa de la energía: sum de h²[k] desde n hasta N.
-    # energia = ri**2
-    # integral = np.cumsum(energia[::-1])[::-1]
-    # Devolver en dB normalizado a 0 dB: 10*log10(integral / integral[0] + eps)
+**Decisiones de implementación que hay que saber:**
+- `calcular_parametros_acusticos` devuelve EDT, T10, T20, T30, D50, C80 y SNR, para las 8 bandas de octava (125 Hz a 16 kHz).
+- `metodo_lundeby`: la regresión preliminar que busca el cruce con el piso de ruido se acota a 4× el tiempo que tarda la señal en caer 20 dB desde el pico. Sin ese límite, RIs con decaimiento de doble pendiente (caída rápida real + cola mucho más lenta antes del silencio real) dan un truncamiento muy tardío y sin sentido físico — la regresión termina promediando ambas pendientes.
+- `filtro_octava` usa `sosfiltfilt`, no `filtfilt` con coeficientes `b, a` directos. En bandas bajas (125 Hz) con orden 4 (8 polos reales por la transformación pasabajos→pasabanda), la forma directa da `NaN` por mal condicionamiento numérico — verificado empíricamente, no es una preferencia estética.
+- `cargar_audio` (M2) no promedia canales de una señal estéreo (downmix) — selecciona un solo canal (parámetro `canal`, por defecto `"L"`). Promediar introduce cancelaciones tipo filtro peine entre canales desfasados.
+- `_calcular_tiempo()` (interna) centraliza el criterio de validez de un ajuste (R² < 0.8 o pendiente positiva → `None`), usado por EDT/T10/T20/T30 para no duplicar esa lógica cuatro veces.
 
-def regresion_lineal(x: np.ndarray, y: np.ndarray) -> tuple[float, float, float]:
-    # Mínimos cuadrados. Devolver (pendiente, ordenada, R²).
-    # Implementar manualmente (no np.polyfit) para demostrar comprensión.
-    # La pendiente en dB/s permite calcular T60 = -60 / pendiente.
+### API REST (FastAPI) — implementada
 
-def calcular_parametros_acusticos(ri: np.ndarray, fs: int) -> dict[str, dict[float, float]]:
-    # Calcula EDT, T10, T20, T30, D50, C80 por banda de octava.
-    # Bandas: 125, 250, 500, 1000, 2000, 4000 Hz.
-    # Para cada banda: filtro_octava → integral_schroeder → regresion_lineal en rangos ISO 3382.
-    # EDT:  regresión entre  0 dB y -10 dB, extrapolar a -60 dB → T = -60/pendiente
-    # T10:  regresión entre -5 dB y -15 dB, extrapolar a -60 dB
-    # T20:  regresión entre -5 dB y -25 dB, extrapolar a -60 dB
-    # T30:  regresión entre -5 dB y -35 dB, extrapolar a -60 dB
-    # D50:  sum(h²[:N_50ms]) / sum(h²) * 100  donde N_50ms = int(0.05 * fs)
-    # C80:  10*log10(sum(h²[:N_80ms]) / sum(h²[N_80ms:]))  donde N_80ms = int(0.08 * fs)
-    # Estructura de retorno: {'EDT': {125: val, 250: val, ...}, 'T30': {...}, ...}
-```
+Routers en `app/routers/` (uno por dominio: `health.py`, `signals.py`, `filters.py`, `acoustics.py`, `analysis.py`, `utils.py`, `convolution.py`), registrados en `app/main.py`. Schemas Pydantic en `app/schemas/`.
 
-### M3 — API REST (FastAPI)
-
-Además de las funciones de análisis, hay que exponer **toda** la funcionalidad (M1 + M2 + M3) como endpoints. Los routers van en `app/routers/`, los schemas en `app/schemas/`.
-
-**Endpoints mínimos:**
+**Endpoints:**
 
 | Endpoint | Método | Qué hace |
 |---|---|---|
-| `/health` | GET | Health check (ya existe) |
-| `/api/v1/signals/pink-noise` | POST | Genera ruido rosa → devuelve WAV |
-| `/api/v1/signals/sine-sweep` | POST | Genera sine sweep → devuelve WAV |
-| `/api/v1/signals/synthetic-ir` | POST | Genera RI sintética con T60 por banda → devuelve WAV |
-| `/api/v1/filters/band` | POST | Filtra audio subido por banda de octava → devuelve WAV |
+| `/health` | GET | Health check |
+| `/api/v1/signals/pink-noise` | POST | Genera ruido rosa → WAV |
+| `/api/v1/signals/sine-sweep` | POST | Genera sine sweep → WAV |
+| `/api/v1/signals/sine-sweep-pair` | POST | Sweep + filtro inverso → ZIP |
+| `/api/v1/signals/synthetic-ir` | POST | Genera RI sintética con T60 por banda → WAV |
 | `/api/v1/filters/frequencies` | GET | Lista frecuencias centrales disponibles |
-| `/api/v1/acoustics/parameters` | POST | Recibe WAV, calcula EDT/T10/T20/T30/D50/C80 por banda |
-| `/api/v1/utils/schroeder` | POST | Devuelve curva de Schroeder de una RI |
-| `/api/v1/utils/log-scale` | POST | Convierte señal a escala dB |
+| `/api/v1/filters/band` | POST | Filtra audio subido por banda de octava → WAV |
+| `/api/v1/acoustics/parameters` | POST | EDT/T10/T20/T30/D50/C80 por banda → JSON |
+| `/api/v1/acoustics/parameters/by-bands` | POST | Mismo resultado organizado por banda |
+| `/api/v1/analysis/impulse-response` | POST | Análisis completo de una RI → JSON |
+| `/api/v1/utils/schroeder` | POST | Curva de Schroeder de una RI → JSON |
+| `/api/v1/utils/smoothing` | POST | Envolvente suavizada → JSON |
+| `/api/v1/utils/log-scale` | POST | Señal en escala dB → JSON |
+| `/api/v1/convolution/with-ir` | POST | Convoluciona audio con una RI subida → WAV |
+| `/api/v1/convolution/with-synthetic-ir` | POST | Convoluciona audio con una RI sintética → WAV |
 
-**Reglas de los routers:**
-- Aceptar uploads de audio via `multipart/form-data` con `python-multipart`.
-- Devolver WAV como `StreamingResponse` con `media_type="audio/wav"`.
-- Validar con schemas Pydantic (rangos, tipos).
-- HTTP 400 para errores de dominio, 422 para validación, 500 para errores inesperados.
+**Reglas de los routers (ya aplicadas):**
+- Uploads de audio via `multipart/form-data`.
+- WAV devuelto como `StreamingResponse` con `media_type="audio/wav"`.
+- Validación con schemas Pydantic (rangos, tipos) para los endpoints de entrada JSON.
+- HTTP 400 para errores de dominio, 422 para validación/lectura, 500 para errores inesperados.
 
-### M3 — Tests requeridos (`tests/test_analisis.py`)
+Tests en `tests/test_api.py`: 24/24 en verde.
 
-```python
-# suavizar_signal
-def test_suavizar_hilbert_envolvente()   # salida no negativa y misma longitud
-def test_suavizar_media_movil_longitud() # misma longitud que entrada
+### Validación final — hecha
 
-# integral_schroeder
-def test_schroeder_maximo_cero_db()      # primer valor = 0 dB
-def test_schroeder_decreciente()         # curva monótonamente decreciente
-def test_schroeder_ri_sintetizada()      # pendiente ≈ -60/T60 dB/s
+Comparación contra REW (Room EQ Wizard) con 3 RIs: Elveden Hall y Maes Howe (OpenAIR) más una RI propia medida con `medir_ri.py`. T20 y T30 quedan dentro de ±0.5 s en las 3 RIs y en las 6 bandas exigidas (125–4000 Hz); peor caso: T30 a 125 Hz en Elveden Hall, 0.48 s de diferencia. Tablas y gráficos completos en `docs/informe.md` (sección 4.3) y `docs/m3/validacion_m3.md`.
 
-# regresion_lineal
-def test_regresion_lineal_exacta()       # datos perfectamente lineales → R²=1
-def test_regresion_lineal_pendiente()    # pendiente correcta con datos conocidos
-
-# calcular_parametros_acusticos
-def test_parametros_ri_sintetizada()     # T30 dentro de ±10% del T60 conocido
-def test_d50_rango()                     # D50 entre 0% y 100%
-def test_c80_consistencia()              # C80 > 0 si hay mucha energía temprana
-
-# API (tests/test_api.py, usar fastapi.testclient.TestClient)
-def test_health_endpoint()
-def test_analysis_endpoint()             # enviar WAV, verificar respuesta JSON con T30, EDT, etc.
-def test_invalid_file_returns_422()
-```
-
-### M3 — Validación final obligatoria
-
-Comparar resultados de RIR-API con REW (Room EQ Wizard, gratuito) usando RIs reales de OpenAIR:
-- Tolerancia: **±0.5 s** para EDT, T20, T30. **±1 dB** para C80.
-- Incluir tabla de comparación en el informe (ver `docs/m3/m3_consigna.md`).
-- Tag `v1.0.0` en main al entregar. Release en GitHub con changelog.
+**Único pendiente de M3: tag `v1.0.0` en main + release en GitHub con changelog.**
 
 ## Reglas de código
 
@@ -164,4 +130,4 @@ uv run python docs/m1/generar_graficos.py  # regenerar gráficos M1
 - `main` protegida — solo merge via pull request.
 - Ramas: `feature/nombre-descriptivo`.
 - Commits: `feat:`, `fix:`, `test:`, `docs:` (Conventional Commits).
-- M3 se entrega con tag `v1.0.0` en main.
+- **Pendiente:** tag `v1.0.0` en main + release en GitHub con changelog, para cerrar la entrega de M3.
