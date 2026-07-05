@@ -108,20 +108,11 @@ Tolerancia según consigna: **±0.5 s** para EDT/T20/T30.
 | RI | EDT | T20 | T30 |
 |---|---|---|---|
 | Elveden Hall | 0.206 s ✓ | 0.291 s ✓ | 0.414 s ✓ |
-| Maes Howe | 0.196 s ✓ (banda 1000+ N/A, ver nota) | 0.079 s ✓ | 0.127 s ✓ |
+| Maes Howe | 0.196 s ✓ | 0.079 s ✓ | 0.127 s ✓ |
 | RI procesada (medida) | 0.029 s ✓ | 0.021 s ✓ | 0.023 s ✓ |
 
 **T20 y T30 pasan la validación en las 3 RIs, en las 6 bandas, ampliamente dentro de
 tolerancia** (peor caso 0.41 s contra un límite de 0.5 s).
-
-> **Nota sobre EDT en Maes Howe:** las bandas 500/1000/2000 Hz pasaron a `N/A`. No es un
-> efecto de la corrección de Lundeby, sino del downmix a mono ya presente en el árbol de
-> trabajo (`cargar_audio` promedia los canales antes de normalizar). Promediar los dos
-> canales de una IR estéreo puede introducir cancelaciones tipo comb filtering que afectan
-> sobre todo a una ventana tan corta como la de EDT (0 a −10 dB) y bajan el R² por debajo del
-> mínimo (0.8) en esas bandas. Queda fuera del alcance de este arreglo — si se quiere
-> recuperar EDT ahí habría que revisar si conviene analizar cada canal por separado en vez
-> de promediarlos.
 
 ### 3.1 Máxima desviación registrada
 
@@ -225,11 +216,6 @@ la consigna, para las 3 RIs.
   conclusión de tolerancia (todo seguía y sigue dentro de ±0.5 s), pero corrige un caso donde
   el resultado podía ser groseramente incorrecto con RIs reales de baja densidad modal y bajo
   SNR en graves — el escenario más común fuera de este set de validación.
-- **EDT en Maes Howe (500/1000/2000 Hz) da `N/A`.** No es efecto de la corrección de
-  Lundeby: viene del downmix a mono en `cargar_audio` (promedia los canales antes de
-  normalizar), que puede introducir cancelaciones tipo comb filtering que afectan a la
-  ventana corta de EDT (0 a −10 dB) y bajan el R² por debajo del mínimo exigido (0.8) en esas
-  bandas. Queda pendiente para una revisión aparte.
 
 ---
 

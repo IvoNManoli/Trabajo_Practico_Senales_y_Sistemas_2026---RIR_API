@@ -316,24 +316,25 @@ El fundamento es la deconvolución mediante convolución con el filtro inverso, 
 
 Las siguientes imágenes ilustran este proceso paso a paso sobre una RI real, medida en una sala con el script "medir_ri.py".
 
-Así se ve, en la Figura 3, la RI recién obtenida de la convolución, sin ningún recorte. Es una señal larga que contiene la respuesta al impulso del recinto (el pico de sonido directo y su cola de reverberación) precedida por una región de ruido de fondo.
+Así se ve, en la figura 3, la RI recién obtenida de la convolución, sin ningún recorte. Es una señal larga que contiene la respuesta al impulso del recinto (el pico de sonido directo y su cola de reverberación) precedida por una región de ruido de fondo.
 
 ![RI medida — convolución completa](m2/imagenes/ri_medida_completa.png)
 
 *Figura 3: RI medida, convolución completa sin recorte.*
 
-La Figura 4 muestra el criterio para determinar el piso de ruido: se toma el último 10% de la convolución completa (la región sombreada), asumiendo que para ese tramo la reverberación ya decayó por completo y solo queda ruido de fondo de la grabación. Con eso se calcula el RMS del ruido, y el umbral de detección se fija 20 dB por encima de ese valor.
+La figura 4 muestra el criterio para determinar el piso de ruido: se toma el último 10% de la convolución completa (la región sombreada), asumiendo que para ese tramo la reverberación ya decayó por completo y solo queda ruido de fondo de la grabación. Con eso se calcula el RMS del ruido, y el umbral de detección se fija 20 dB por encima de ese valor.
 
 ![Estimación del piso de ruido en la convolución completa](m2/imagenes/ri_medida_piso_ruido.png)
 
 *Figura 4: Estimación del piso de ruido sobre la convolución completa.*
 
-Con ese umbral ya definido, la línea punteada de la Figura 5 marca el onset: el instante, retrocediendo desde el pico, a partir del cual la señal supera continuamente el umbral. Ahí es donde se recorta la señal. Todo lo anterior al onset se descarta por considerarse piso de ruido.
+Con ese umbral ya definido, la línea punteada de la figura 5 marca el onset: el instante, retrocediendo desde el pico, a partir del cual la señal supera continuamente el umbral. Ahí es donde se recorta la señal. Todo lo anterior al onset se descarta por considerarse piso de ruido.
+
 ![RI medida — convolución completa con umbral temporal](m2/imagenes/ri_medida_completa_onset.png)
 
 *Figura 5: RI medida con el umbral temporal de recorte (onset).*
 
-La Figura 6 muestra cómo queda la señal finalmente devuelta por `obtener_ri_desde_sweep()`, recortada desde el onset, conservando una fracción del ataque de la envolvente, para no perder información de la llegada temprana del sonido directo y normalizada a 0.9 de pico, ya lista para pasar al resto del pipeline de análisis.
+La figura 6 muestra cómo queda la señal finalmente devuelta por `obtener_ri_desde_sweep()`, recortada desde el onset, conservando una fracción del ataque de la envolvente, para no perder información de la llegada temprana del sonido directo y normalizada a 0.9 de pico, ya lista para pasar al resto del pipeline de análisis.
 
 ![RI medida — procesada](m2/imagenes/ri_medida_procesada.png)
 
@@ -387,7 +388,7 @@ De modo que la curva siempre arranca en 0 dB, es decir, con toda la energía tod
 
 Esta función cuenta con cuatro tests. Los dos primeros son de forma: que la curva devuelta tenga la misma longitud que la RI de entrada, y que su primer valor sea efectivamente 0 dB. El tercero verifica que la curva sea monótonamente decreciente en toda su extensión, una propiedad que se cumple por construcción matemática (nunca se le puede sumar energía negativa a la integral) y que sirve como chequeo de que la implementación no tenga errores de signo o de indexado. El cuarto es el más relevante desde lo acústico. Se sintetiza una RI con un T60 conocido de antemano, calcula su integral de Schroeder, ajusta una recta por mínimos cuadrados en el rango típico de T30 (−5 a −35 dB), y verifica que el T60 estimado a partir de esa pendiente esté dentro de un 30% del valor real usado para sintetizar la señal, confirmando que la curva no solo decrece, sino que lo hace a la velocidad correcta.
 
-## 3.5.2 Integral de Schroeder
+## 3.5.4 Regresión lineal
 
 En `regresion_lineal()` se implementa el método de cuadrados mínimos planteado en el marco teórico (ecuaciones 10 a 13). Recibe dos arrays, típicamente el tiempo y la curva de Schroeder en dB dentro del rango de interés, y devuelve la pendiente $m$, la ordenada al origen $b$ y el coeficiente de determinación $R^2$, calculados exactamente según esas mismas fórmulas.
 
@@ -397,130 +398,303 @@ Vale aclarar que esta función solo calcula el ajuste, no decide si ese ajuste e
 
 Esta función tiene tres tests. El primero verifica el caso más simple: una recta perfectamente conocida ($y = 2x + 1$, sin ruido), confirmando que la pendiente y la ordenada recuperadas coincidan con los valores exactos usados para generarla. El segundo confirma que, para datos perfectamente lineales, el $R^2$ calculado sea exactamente 1.0, el máximo posible. El tercero prueba un caso más realista: una recta conocida ($y = 3x + 5$) a la que se le agrega ruido gaussiano, y verifica que la pendiente y la ordenada estimadas sigan estando razonablemente cerca de los valores reales pese al ruido, validando que el método sea robusto a pequeñas perturbaciones, no solo exacto en el caso ideal sin ruido.
 
-## 3.5.2 Método Lundeby
+## 3.5.5 Método Lundeby
 
 El método Lundeby es un método para truncar el piso de ruido de la curva de Schroeder. El problema de la integral de Schroeder es que no sabe dónde empieza el ruido, por lo que si se le da una RI de mucha duración, considerará al piso de ruido en la integral y eso resultará posteriormente en un peor ajuste lineal. Para solventar esta carencia, el método Lundeby propone separar al tiempo en bloques de 10 ms (ventanas), hacer una estimación del nivel del piso de ruido utilizando el último 10% de la señal, buscar el primer bloque donde la energía cae dentro de un margen de 10 dB cercanos al piso de ruido, y realizar un ajuste lineal entre el inicio de la curva y ese bloque. Luego, se busca la intersección entre esa recta ajustada y el piso de ruido calculado, y promedia el nivel de la señal luego de esa intersección, para obtener un nuevo nivel de piso de ruido y así repetir todo el proceso nuevamente.  
 
 La función `metodo_lundeby()` implementa este algoritmo llamando directamente a `regresion_lineal()`,definiendo una función auxiliar interna llamada `_primer_cruce_sostenido()`.En vez de tomar como válido el primer bloque que cae por debajo del umbral, esa función auxiliar exige varios bloques consecutivos por debajo del margen de 10 dB, y descarta cualquier candidato dentro de los primeros bloques de la señal, precisamente para no confundir un nulo modal aislado (algo típico en bandas graves como 125 Hz, donde hay poca densidad de modos) con el verdadero comienzo del piso de ruido. A esto se suma otra salvaguarda dentro del bucle principal: cada vez que se reestima el nivel de ruido tras un nuevo truncamiento, ese nuevo valor solo se acepta si no supera en más de 3 dB a la estimación de referencia inicial, evitando que el algoritmo entre en una realimentación positiva donde, iteración tras iteración, el truncamiento se corre cada vez más temprano devorando cola reverberante real en vez de ruido. El proceso se repite hasta que el punto de truncamiento deja de moverse de una iteración a la siguiente, con un tope de 15 iteraciones para garantizar que la función siempre termine.
 
-Esta función cuenta con cuatro tests. Uno verifica simplemente los tipos de retorno y que el índice de truncamiento devuelto esté dentro del rango válido de la señal. Otro confirma que, al agregarle ruido de fondo real a una RI sintetizada, el truncamiento efectivamente ocurra antes del final de la señal (y no al final, como pasaría si no detectara el ruido). Un tercero compara dos versiones de la misma RI, una limpia y otra con ruido agregado, y verifica que la versión ruidosa trunque en un punto más temprano que la limpia, tal como se espera si el algoritmo está reaccionando al ruido y no ignorándolo. El último valida la precisión de la estimación en sí: agrega ruido de fondo con un nivel conocido de antemano y verifica que el nivel de ruido estimado por la función esté dentro de ±6 dB del valor real.
+Esta función cuenta con cuatro tests. Uno verifica simplemente los tipos de retorno y que el índice de truncamiento devuelto esté dentro del rango válido de la señal. Otro confirma que, al agregarle ruido de fondo real a una RI sintetizada, el truncamiento efectivamente ocurra antes del final de la señal. Si ocurriese al final, significaría que no se está detectando ruido. Un tercero compara dos versiones de la misma RI, una limpia y otra con ruido agregado, y verifica que la versión ruidosa trunque en un punto más temprano que la limpia, tal como se espera si el algoritmo está reaccionando al ruido y no ignorándolo. El último valida la precisión de la estimación en sí, agrega ruido de fondo con un nivel conocido de antemano y verifica que el nivel de ruido estimado por la función esté dentro de ±6 dB del valor real.
 
-#### `calcular_parametros_acusticos`
+En síntesis, la función recibe como parámetros a la respuesta al impulso y la frecuencia de muestreo, y devuelve una tupla con el índice del truncamiento (como entero) y el nivel de piso de ruido (como flotante).
 
-Para cada banda de octava (125 Hz a 16 kHz):
+## 3.5.6 Cálculo de parámetros acústicos 
 
-1. `filtro_octava(ri, fc, fs)` → `ri_banda`
-2. `integral_schroeder(ri_banda)` → `edc` + vector de tiempo `t`
-3. `regresion_lineal` en rangos ISO 3382 → EDT, T10, T20, T30
-4. Cálculo directo de D50 y C80 sobre `ri_banda²`
+Esta es la función vital de la API, donde se reúne todo lo desarrollado hasta ahora en Milestone 3. Se trata de `calcular_parametros_acusticos()`, quien recibe como entrada la respuesta al impulso completa, la frecuencia de muestreo y un flag (usar_lundeby), y devuelve un diccionario con EDT, T10, T20, T30, D50, C80 y además la relación señal/ruido (SNR) estimada, cada uno con un valor por banda de octava (125 Hz a 16 kHz).
 
-#### `metodo_lundeby` (implementación extra)
+Para lograrlo, importa y encadena muchas de las funciones descriptas en las secciones anteriores. Primero, por cada banda se filtra la RI completa con `filtro_octava()`, y con esa señal filtrada se decide cómo acotar el tramo útil antes de integrar. Se decidió agregar el flag de  "usar_lundeby" para poder realizar fácilmente comparaciones entre el uso y no uso del método, aunque por defecto está activo. Como se mencionó previamente, se aplica `metodo_lundeby()`, que devuelve tanto el índice de truncamiento como el nivel de piso de ruido estimado; si está desactivado, se conforma con una estimación más simple del ruido usando el último 10% de la señal, sin truncar nada. Con la señal ya acotada, calcula la curva de decaimiento llamando a `integral_schroeder()`, y sobre esa curva ajusta cada tiempo de reverberación con la función auxiliar `_calcular_tiempo()` en los rangos que pide la norma.
 
-Determina iterativamente el punto de truncamiento de la RI buscando el cruce entre la curva de decaimiento y el piso de ruido. Permite corregir la integral de Schroeder en grabaciones con ruido de fondo real. Activable con `usar_lundeby=True` en `calcular_parametros_acusticos`.
+En cuanto a la función auxiliar `_calcular_tiempo()`, esta recibe la curva de Schroeder, el vector de tiempo, y el par de límites en dB del rango a ajustar (por ejemplo −5 y −35 para T30). Recorta la curva a ese rango, llama a `regresion_lineal()` sobre esos puntos, y extrapola la pendiente obtenida a −60 dB (`T = -60 / pendiente`) para devolver el tiempo de reverberación correspondiente. También aplica ahí los criterios de validez que quedaron pendientes de `regresion_lineal()`. Si hay menos de dos puntos en el rango, si la pendiente resulta positiva, o si el $R^2$ del ajuste es menor a 0.8, devuelve `None` en vez de un número poco confiable. Se decidió exteriorizar esta función, en vez de repetir esa misma lógica cuatro veces dentro de `calcular_parametros_acusticos()` (una por cada parámetro temporal, que solo difieren en el rango de dB), para no duplicar código y para tener en un único lugar el criterio de qué hace que un ajuste sea aceptable. Si ese criterio cambiara en el futuro (otro umbral de $R^2$, por ejemplo), alcanzaría con modificarlo una sola vez.
+
+D50 y C80, en cambio, no dependen de la curva de Schroeder ni del truncamiento de Lundeby: se calculan comparando directamente la energía de la señal filtrada (`ri_banda` al cuadrado) en distintas ventanas de tiempo, según las ecuaciones 20 y 21:
+
+$$D_{50} = \frac{\sum_{n=0}^{N_{50}} h^2[n]}{\sum_{n=0}^{N-1} h^2[n]} \times 100\% \tag{20}$$
+
+$$C_{80} = 10 \log_{10}\!\left(\frac{\sum_{n=0}^{N_{80}} h^2[n]}{\sum_{n=N_{80}}^{N-1} h^2[n]}\right) \tag{21}$$
+
+donde $N_{50}$ y $N_{80}$ son la cantidad de muestras correspondientes a 50 ms y 80 ms respectivamente. Como D50 es un cociente de energías siempre positivas, nunca puede ser negativo ni superar el 100%; C80 en cambio sí puede ser negativo, si la energía tardía predomina sobre la temprana.
+
+Entre las decisiones de esta función vale mencionar que, si la RI de entrada llega con más de una dimensión, se toma directamente el primer canal antes de cualquier procesamiento, en línea con el mismo criterio de "tomar un canal fijo en vez de mezclar" que se usó en `cargar_audio()`. También se calcula la SNR (relación señal-ruido) por banda, como la diferencia en dB entre el pico de la señal filtrada y el piso de ruido estimado. Ese piso de ruido es el mismo valor que ya se calculó unos pasos antes para decidir el truncamiento con `metodo_lundeby()`. Si "usar_lundeby" está activo (el caso por defecto) se utiliza el mismo valor de SNR que devuelve la función. En caso contrario, se devuelve simplemente la estimación simple del último 10% de la señal. Se decidió incluir este punto porque resulta útil para poder tomar decisiones sobre qué valor de tiempo de reverberación es más apropiado para una medición. Cabe destacar que el valor de SNR también se reporta por banda, como los demás parámetros.
+
+Esta función cuenta con cinco tests. El primero sintetiza una RI con un T60 conocido, y el T30 calculado a 1000 Hz debe caer dentro de un 20% de ese valor real. Otro confirma que D50 siempre quede acotado entre 0% y 100% en todas las bandas, tal como exige su propia definición. Un tercero construye una señal con energía deliberadamente concentrada en los primeros 10 ms y comprueba que su C80 resulte positivo, como corresponde cuando predomina la energía temprana. El cuarto valida la forma de la respuesta, es decir, que el diccionario devuelto contenga las seis claves de parámetros esperadas y que cada una tenga un valor para cada banda de octava. El último repite el test del T30 conocido pero forzando explícitamente `usar_lundeby=True`, confirmando que el camino con truncamiento de Lundeby activo también produzca un resultado válido y no solo el camino más simple sin truncar.
+
+## 3.5.7 Convolución con audio
+
+Como se mencionó en la introducción, además del análisis de parámetros la API ofrece una herramienta de validación subjetiva. Permite aplicarle la reverberación de una RI (medida o sintética) a un audio seco cualquiera, para poder escuchar el resultado. De eso se encarga `convolucionar()`, que recibe el audio seco, la RI, y la frecuencia de muestreo de cada uno por separado, y devuelve el audio ya convolucionado.
+
+El problema con el que se enfrenta esta función es de índole práctico. Al utilizar una RI y un audio de distintas fuentes, es altamente probable que cada uno contenga una frecuencia de muestreo diferente. Por ello, si las frecuencias de muestreo difirieran, convolucionar directamente daría un resultado con el tono y la duración incorrectos. Para evitarlo, si las frecuencias no coinciden, uno de los dos audios debe resamplearse a la frecuencia del otro. Se decidió resamplear la RI a la frecuencia del audio dado que el audio contiene información más valiosa para rescatar entre sus muestras que la RI, de quien solo se toma la tendencia de decaimiento para modificar la escucha del audio original. En otras palabras, resulta mucho más valiosa la información del audio a escuchar que la RI de la cual se quiere adicionar un poco de información.
+
+Para realizar el resampleo se utilizó `resample_poly()` de `scipy.signal`. En términos simples, esta función cambia la cantidad de muestras por segundo de una señal, insertando o descartando muestras según haga falta. No obstante, la función `resample_poly(RI, f_up, f_down)` no recibe directamente las dos frecuencias de muestreo, sino una relación de enteros "f_up/f_down" que indica en qué proporción cambiar la cantidad de muestras. Para obtener cada una primero se calcula el mínimo común denominador de ambas frecuencias de muestreo y luego se dividie a las frecuencias de muestreos por ese valor. En el caso de "f_up" se toma como numerador la frecuencia del audio, y viceversa. Esto garantiza que la relación entre "f_up" y "f_down" sea la fracción más simple posible, dando como resultado un número natural. 
+
+Luego de realizar el resampleo se procede a realizar la convolución. Una vez más el corazón de la función es `fftconvolve()` de `scipy.signal` (en modo "full para conservar todo el audio). Tal como se mencionó en el caso del sine sweep, esta herramienta resulta mucho más eficiente que realizar una convolución directa. 
+
+Al final, el resultado de la convolución decidió normalizarse a 0.9 de pico para dejar un margen antes del clipeo, y se castea explícitamente a float32. Se decidió usar este formato, a diferencia del float64, que usa el resto del proyecto, porque esta señal está pensada únicamente para exportarse como WAV y reproducirse, no para seguir siendo analizada matemáticamente. En este contexto float32 ya tiene sobrada precisión para eso y ocupa la mitad de espacio.
+
+Esta función cuenta con seis tests. Uno verifica que la longitud de la salida sea exactamente la que corresponde a una convolución, es decir, que la cantidad de muestras totales se la suma de las individuales menos 1. Otro confirma que el pico de la salida quede normalizado a 0.9. Un tercero chequea que el tipo de dato de salida sea efectivamente float32, aunque las entradas se pasen como float64. Otro valida un caso trivial pero importante: si el audio de entrada es silencio absoluto, la salida también debe ser silencio absoluto (nada de ruido numérico introducido por la convolución). Los dos últimos cubren el resampleo: uno verifica que, con frecuencias de muestreo distintas entre audio y RI, la longitud de la salida sea coherente con la RI ya resampleada al fs del audio; mientras que el otro confirma el caso contrario, que si ambas frecuencias coinciden no se aplique ningún resampleo y la longitud de salida sea exactamente la esperada sin ninguna corrección de por medio.
 
 ### 3.6 API REST
 
-La API expone toda la funcionalidad (M1 + M2 + M3) como endpoints HTTP:
+La API expone toda la funcionalidad como endpoints HTTP, resumidos en la Tabla 3:
 
-| Endpoint | Método | Función |
-|----------|:------:|---------|
-| `/health` | GET | Health check |
-| `/api/v1/signals/pink-noise` | POST | Genera ruido rosa → WAV |
-| `/api/v1/signals/sine-sweep` | POST | Genera sine sweep → WAV |
-| `/api/v1/signals/sine-sweep-pair` | POST | Sweep + filtro inverso → ZIP con dos WAV |
-| `/api/v1/signals/synthetic-ir` | POST | Genera RI sintética → WAV |
-| `/api/v1/filters/frequencies` | GET | Lista frecuencias centrales disponibles |
-| `/api/v1/filters/band` | POST | Filtra audio por banda → WAV |
-| `/api/v1/acoustics/parameters` | POST | EDT/T10/T20/T30/D50/C80 por banda → JSON |
-| `/api/v1/acoustics/parameters/by-bands` | POST | Mismo resultado organizado por frecuencia |
-| `/api/v1/analysis/impulse-response` | POST | Análisis completo de RI → JSON |
-| `/api/v1/utils/schroeder` | POST | Curva de Schroeder → JSON |
-| `/api/v1/utils/smoothing` | POST | Envolvente suavizada → JSON |
-| `/api/v1/utils/log-scale` | POST | Señal en dB → JSON |
-| `/api/v1/convolution` | POST | Convolucion de RI con audio → WAV |
+| Endpoint | Método | Función | Respuesta |
+|----------|:------:|---------|:---------:|
+| `/health` | GET | Health check | JSON |
+| `/api/v1/signals/pink-noise` | POST | Genera ruido rosa | WAV |
+| `/api/v1/signals/sine-sweep` | POST | Genera sine sweep | WAV |
+| `/api/v1/signals/sine-sweep-pair` | POST | Sweep + filtro inverso | ZIP (2 WAV) |
+| `/api/v1/signals/synthetic-ir` | POST | Genera RI sintética | WAV |
+| `/api/v1/filters/frequencies` | GET | Lista frecuencias centrales disponibles | JSON |
+| `/api/v1/filters/band` | POST | Filtra audio por banda | WAV |
+| `/api/v1/acoustics/parameters` | POST | EDT/T10/T20/T30/D50/C80 por banda | JSON |
+| `/api/v1/acoustics/parameters/by-bands` | POST | Mismo resultado organizado por frecuencia | JSON |
+| `/api/v1/analysis/impulse-response` | POST | Análisis completo de RI | JSON |
+| `/api/v1/utils/schroeder` | POST | Curva de Schroeder | JSON |
+| `/api/v1/utils/smoothing` | POST | Envolvente suavizada | JSON |
+| `/api/v1/utils/log-scale` | POST | Señal en dB | JSON |
+| `/api/v1/convolution/with-ir` | POST | Convoluciona audio con una RI subida | WAV |
+| `/api/v1/convolution/with-synthetic-ir` | POST | Convoluciona audio con una RI sintética | WAV |
 
-**Reglas de implementación:**
-- Uploads de audio via `multipart/form-data`.
-- WAV devuelto como `StreamingResponse(media_type="audio/wav")`.
-- HTTP 400 para errores de dominio, 422 para archivos inválidos, 500 para errores inesperados.
-- Validación con schemas Pydantic (rangos, tipos).
-- CORS habilitado con `allow_origins=["*"]` para uso desde cualquier cliente.
+*Tabla 3: Endpoints de la API REST, su función y su respuesta.*
+
+Cada endpoint se implementa como una función "async" de FastAPI, decorada con "@router.post" o "@router.get", dentro de un router dedicado por dominio:
+
+- `signals.py` — Generación de señales (ruido rosa, sine sweep, RI sintética).
+- `filters.py` — Filtrado por banda de octava.
+- `acoustics.py` — Cálculo de parámetros acústicos ISO 3382.
+- `analysis.py` — Análisis completo de una RI (parámetros y curvas por banda en un solo endpoint).
+- `utils.py` — Utilidades sueltas de análisis (Schroeder, suavizado, escala log).
+- `convolution.py` — la herramienta de convolución de audio con una RI.
+
+Cada uno de esos routers se registra en `app/main.py` mediante `app.include_router()`, agregándole un prefijo común (`/api/v1/<dominio>`) y una etiqueta, que es lo que después Swagger usa para agrupar los endpoints en la documentación automática de `/docs`.
+
+Esta separación por router respeta la misma arquitectura de tres capas que se explicó al principio del desarrollo experimental. El router solo se encarga de recibir la petición HTTP, invocar a la función de servicio correspondiente y traducir su resultado o sus excepciones a una respuesta HTTP. 
+
+Los endpoints que solo necesitan parámetros numéricos (como generar ruido rosa o un sine sweep) reciben un cuerpo JSON validado contra un schema de Pydantic, con rangos definidos. Si un valor queda fuera de rango, FastAPI devuelve automáticamente un error 422 sin que el código del router tenga que chequear nada a mano. Los endpoints que en cambio necesitan un archivo de audio reciben un "UploadFile" vía `multipart/form-data`, leen sus bytes y los envuelven en un "io.BytesIO" para poder pasárselos directamente a `cargar_audio()` sin escribir nada a disco, tal como se explicó al hablar de objetos file-like cuando se desarrolló la función. Los que devuelven audio en vez de JSON, lo hacen empaquetando la señal en un WAV en memoria con `soundfile.write()` sobre otro "BytesIO", envuelto en un StreamingResponse con `media_type="audio/wav"`. Ese "media_type" es solo una etiqueta que le dice al programa que recibe la respuesta HTTP qué tipo de contenido le está llegando, para que sepa interpretarlo.
+
+Los schemas de Pydantic mencionados viven en "app/schemas/", separados en dos archivos según para qué lado de la petición sirven. Por un lado, `signals.py` define los schemas de entrada, "PinkNoiseRequest" y "SineSweepRequest", usados por los dos únicos endpoints cuya entrada es enteramente JSON (duración, frecuencias, fs). Son clases que heredan de la librería `pydantic.BaseModel`, donde cada campo se declara con el valor por defecto, el rango válido (mínimo y máximo), y una descripción en texto que después FastAPI reutiliza automáticamente para armar la documentación interactiva en `/docs`. El resto de los endpoints, que reciben un archivo de audio, no usan un schema de este tipo para su entrada, porque un "UploadFile" no es algo que el BaseModel común pueda representar directamente como campo, así que esos parámetros (el archivo, y algún dato adicional como la frecuencia central en el filtrado por banda) se declaran sueltos en la firma de la función con `File(...)` y `Form(...)`, en vez de agruparse en una clase.
+
+Sobre el manejo de errores, cada router distingue tres situaciones bien delimitadas. Primero, un archivo de audio que no se puede leer o decodificar se traduce en un 422 (error de validación de la entrada). Segundo, una condición de dominio que sí se pudo leer pero no tiene sentido para el cálculo, como por ejemplo una RI demasiado corta, una frecuencia de inicio de barrido mayor que la del final del barrido, etc. Estas situaciones se traducen en un error 400. Finalmente cualquier excepción inesperada durante el cálculo en sí se traduce en un error 500 con el mensaje de la excepción original.
+
+No obstante, la compresión de esta sección de la API fue muy limitada y resuelta mayormente por el uso de asistentes virtuales.
 
 ---
 
 ## 4. Resultados
 
-### 4.1 Validación M1 — Generación de señales
+### 4.1 Resultados de validación de generación de señales
 
-| Señal | Criterio | Resultado | Estado |
-|-------|----------|-----------|:------:|
-| Ruido rosa | Pendiente −3 ± 1 dB/oct | −3.01 dB/oct | ✓ |
-| Ruido rosa | Distribución uniforme en el tiempo | Confirmado en espectrograma | ✓ |
-| Sine sweep | Barrido monótono 20 Hz → 20 kHz | Confirmado en espectrograma | ✓ |
-| Convolución sweep × inverso | SNR pico/piso ≥ 40 dB | ≈ 101.7 dB | ✓ |
+A continuación se proporcionan diversas gráficas que permiten visualizar los resultados obtenidos para la generación de señales. Los gráficos de PSD y convolución se generaron con `docs/m1/scripts/generar_graficos.py`; los espectrogramas y el análisis espectral se generaron exportando las señales a WAV y analizándolas en Audacity.
 
-La pendiente de −3.01 dB/oct del ruido rosa (medida con Welch sobre 10 s de señal) es prácticamente coincidente con el valor teórico de −3.01 dB. La SNR de 101.7 dB en la convolución sweep × filtro inverso garantiza que la deconvolución en M2 produce RI con alta resolución y bajo nivel de artefactos.
+La figura 7 muestra la pendiente medida con Welch sobre 10 segundos de señal: −3.01 dB/oct, prácticamente coincidente con el valor teórico (la línea roja discontinua). El test automatizado exige que esa pendiente esté dentro del rango −4 a −2 dB/oct, criterio que esta implementación supera con amplitud.
 
-*Ver gráficos: `docs/m1/imagenes/`*
+![PSD ruido rosa](m1/imagenes/ruido_rosa_espectro.png)
 
-### 4.2 Validación M2 — Procesamiento de RI
+*Figura 7: Densidad espectral de potencia del ruido rosa, medida con el método de Welch, contra la referencia teórica de −3 dB/oct.*
 
-Los filtros de octava fueron validados con dos RIs reales de OpenAIR:
-- **Elveden Hall** (Suffolk, Inglaterra) — sala grande, T60 ≈ 3 s
-- **Maes Howe** (Orkney, Escocia) — recinto pequeño, T60 ≈ 0.3 s
+La figura 8 confirma visualmente, desde una herramienta externa al proyecto, la misma caída progresiva de nivel a medida que aumenta la frecuencia, con una envolvente espectral consistente con −3 dB/oct en toda la banda audible.
 
-| Criterio | Verificación | Estado |
-|----------|-------------|:------:|
-| Filtros IEC 61260: −3 dB en frecuencias de corte | Verificado con `freqz` | ✓ |
-| Filtros IEC 61260: sin solapamiento entre bandas | Sin huecos de 125 Hz a 4 kHz | ✓ |
-| `cargar_audio`: normalización entre −1 y 1 | Amplitud máxima = 1.0 | ✓ |
-| `obtener_ri_desde_sweep`: onset por criterio RMS | 20 dB sobre piso de ruido | ✓ |
+![Espectro ruido rosa Audacity](<m1/imagenes/Espectro ruido rosa con caida 3dB por octava.png>)
 
-*Ver gráficos: `docs/m2/imagenes/`*
+*Figura 8: Análisis espectral del ruido rosa en Audacity.*
+
+En la figura 9, como un detalle adicional, se proporciona el espectograma del ruido rosa analizado en Audacity, desde el cual puede apreciarse que la densidad de color es aproximadamente uniforme en toda la banda y a lo largo del tiempo. Esta es precisamente la característica del ruido rosa, donde se tiene igual energía por octava, sin preferencia temporal ni espectral, a diferencia de un ruido blanco que se vería más brillante en las frecuencias altas.
+
+![Espectrograma ruido rosa](<m1/imagenes/Pink noise espectrograma.png>)
+
+*Figura 9: Espectrograma del ruido rosa en Audacity.*
+
+La figura 10 muestra el comportamiento característico del sweep logarítmico en el dominio temporal, donde la frecuencia instantánea crece lentamente al principio y se acelera hacia el final (ciclos tan comprimidos que la señal parece sólida a la derecha).
+
+![Forma de onda del sweep](m1/imagenes/sweep_forma_onda.png)
+
+*Figura 10: Forma de onda del sine sweep logarítmico.*
+
+Respecto a su crecimiento frecuencial, resulta más interesante analizar este tipo de señales en un espectograma como el de la figura 11, confirmando que la frecuencia instantánea crece de forma monótonamente creciente de 20 Hz a 20 kHz a lo largo de los 5 segundos del barrido, describiendo una trayectoria exponencial sin discontinuidades ni saltos de frecuencia. El fondo negro representa que el nivel en esas frecuencias, en ese instante de tiempo es mucho más bajo.
+
+![Espectrograma del sweep](<m1/imagenes/Sine sweep espectrograma.png>)
+
+*Figura 11: Espectrograma del sine sweep en Audacity.*
+
+Como plantea la ecuación 5 del marco teórico, la convolución del sweep senoidal con su filtro inverso debe aproximarse a una delta de Dirac. La figura 12 ilustra que, efectivamente, toda la energía de la señal resultante queda concentrada en un único instante, con el resto de la señal prácticamente en cero.
+
+![Convolución sweep × filtro inverso — vista completa](m1/imagenes/convolucion_completa.png)
+
+*Figura 12: Convolución del sweep con su filtro inverso, vista completa.*
+
+Al hacer zoom sobre ese pico (figura 13) se ve un pulso estrecho con lóbulos laterales mínimos, esto se da de esta manera puesto que el impulso ideal es imposible de obtener. No obstante la aproximación práctica al impulso ideal tuvo una relación señal a ruido pico/piso medida de aproximadamente 102 dB, muy por encima del umbral mínimo de 40 dB que exige el test de la función de generación del sine sweep y el filtro inverso. De esta manera, se garantiza que la deconvolución de un sweep grabado con la función de generación de la API producirá una RI con alta resolución y bajo nivel de distorsiones.
+
+![Convolución sweep × filtro inverso — zoom ±5 ms](m1/imagenes/convolucion_zoom.png)
+
+*Figura 13: Zoom sobre el pico de la convolución entre el sweep y su filtro inverso.*
+
+En síntesis, todas las herramientas de generación de señales garantizan su excelente funcionamiento. 
+
+### 4.2 Resultados de validación del procesamiento de respuestas al impulso
+
+Para validar el procesamiento de las respuestas al impulso, se descargaron dos RIs reales de OpenAir, correspondientes a Elveden Hall (Suffolk, Inglaterra) y Maes Howe (Orkney, Escocia). El primero de estos recintos se trata de una sala grande, con valores de T60 relativamente altos, mientras que el segundo es un monumento de enterramiento de la era neolítica, tratándose de cavernas de muy poco tamaño, es decir, un recinto pequeño con un valor de T60 mucho menor. Finalmente, también se midió la respuesta al impulso del recinto de uno de los autores de este proyecto, usando el script `docs/m2/scripts/medir_ri.py`,a modo de inspeccionar y validar también la generación del sine sweep, la reproducción/grabación y la deconvolución de punta a punta con un hardware real. 
+
+Las figuras 14 y 15 muestran, para cada RI real cargada con `cargar_audio()`, la envolvente de Hilbert de la señal ya filtrada en la banda de 1000 Hz. En la figura 14 se observa la RI filtrada de Elveden Hall, con un decaimiento exponencialmente progresivo durante unos 2 segundos.
+
+![Elveden Hall — envolvente banda 1000 Hz](m2/imagenes/elveden_hall_ir.png)
+
+*Figura 14: Envolvente de Hilbert de la RI de Elveden Hall, filtrada en la banda de 1000 Hz (fuente de la RI: OpenAIR).*
+
+En contraste, la figura 15 muestra un decaimiento considerablemente más rápido en la misma banda. Esto es un síntoma de que el recinto es mucho más pequeño y absorbente que el anterior, donde prácticamente las reflexiones se extinguen luego del impulso.
+
+![Maes Howe — envolvente banda 1000 Hz](m2/imagenes/maes_howe_ir.png)
+
+*Figura 15: Envolvente de Hilbert de la RI de Maes Howe, filtrada en la banda de 1000 Hz (fuente de la RI: OpenAIR).*
+
+En la figura 16 se contrasta a las anteriores RI con la medición realizada con el software, visualizando también la envolvente de Hilbert en la banda de 1000 Hz. En este caso se observa un comportamiento intermedio al de los anteriores recintos. 
+
+![RI medida — envolvente banda 1000 Hz](m2/imagenes/ri_medida_procesada_banda1k.png)
+
+*Figura 16: Envolvente de Hilbert de la RI medida (propia), filtrada en la banda de 1000 Hz.*
+
+La figura 17 verifica el correcto funcionamiento de `filtro_octava()`. La línea horizontal punteada marca el nivel de −3 dB en el cual se intersectan las curvas de crecimiento y decrecimiento del filtro en cada banda. Se observa que cada filtro alcanza su máximo (0 dB) en la frecuencia central nominal, también que el filtro se mantiene muy plano dentro de su banda (característica de Butterworth), que la ganancia efectivamente es de esos −3 dB en las frecuencias de corte teóricas, que las bandas no se solapan ni dejen huecos significativos entre si, y que el decaimiento fuera de la banda supera los 20 dB por octava, garantizando buena separación entre bandas vecinas.
+
+![Respuesta en frecuencia filtros de octava](m2/imagenes/respuesta_filtros.png)
+
+*Figura 17: Respuesta en frecuencia de los filtros de octava.*
+
+Puede visualizarse entonces que las herramientas de procesamiento de RIs obtienen resultados esperables, validando su funcionamiento.
 
 ### 4.3 Validación M3 — Parámetros acústicos
 
-#### Validación con RI sintética (T60 conocido)
+La validación de la RI sintética con T60 conocido ya se describió al presentar los tests de `calcular_parametros_acusticos()`, donde se pedía que el T30 calculado sobre una RI sintetizada con T60 = 2.0 s caiga dentro de un 20% del valor real. Esta sección se enfoca en contrastar los parámetros calculados por la API contra REW (Room EQ Wizard), el software de referencia de la industria, usando RIs reales en vez de sintéticas.
 
-Se sintetizó una RI con T60 = 2.0 s en todas las bandas y se calcularon los parámetros:
+Se usaron las tres RIs previamente mencionadas: Elveden Hall, Maes Howe y la RI propia medida con `medir_ri.py`. Para cada una, se cargó el WAV en REW, se midió el tiempo de reverberación con filtro Zero Phase por octava, se exportó la tabla de resultados, y se comparó contra `calcular_parametros_acusticos()`.
 
-| Parámetro | Banda (Hz) | Valor calculado | Valor esperado | Error |
-|-----------|:----------:|:---------------:|:--------------:|:-----:|
-| T30 | 500 | [COMPLETAR] s | 2.0 s | [COMPLETAR] % |
-| T30 | 1000 | [COMPLETAR] s | 2.0 s | [COMPLETAR] % |
-| EDT | 500 | [COMPLETAR] s | — | — |
-| D50 | 1000 | [COMPLETAR] % | — | — |
-| C80 | 1000 | [COMPLETAR] dB | — | — |
+Antes de comparar los tiempos de reverberación, conviene visualizar la curva de Schroeder de cada RI junto con el truncamiento de Lundeby y las rectas de ajuste de T20 y T30, para entender de dónde sale cada número de la comparación.
 
-#### Comparación con REW (Room EQ Wizard)
+La figura 18 muestra el caso de Elveden Hall: al ser una sala grande con alta densidad modal, la curva es prácticamente recta hasta el punto de truncamiento, y las rectas de T20 y T30 casi se superponen entre sí y con la curva medida.
 
-RI utilizada: `[COMPLETAR — nombre del archivo WAV]` (fs = [COMPLETAR] Hz, duración = [COMPLETAR] s)
+![Curva de Schroeder — Elveden Hall](m3/Imagenes/schroeder_lundeby_t30_elveden_hall.png)
+
+*Figura 18: curva de Schroeder, truncamiento de Lundeby y ajuste T20/T30 — Elveden Hall.*
+
+En la figura 19, la curva de Maes Howe muestra una curvatura visible antes del truncamiento — se "dobla" hacia una pendiente más suave a partir de los −45/−50 dB. Es consistente con el ruido de fondo real de la medición y con la baja densidad modal de un recinto tan pequeño en frecuencias bajas, que es exactamente el motivo por el que Lundeby trunca antes de que esa curvatura contamine la regresión.
+
+![Curva de Schroeder — Maes Howe](m3/Imagenes/schroeder_lundeby_t30_maes_howe.png)
+
+*Figura 19: curva de Schroeder, truncamiento de Lundeby y ajuste T20/T30 — Maes Howe.*
+
+La figura 20 muestra el mismo comportamiento en la RI medida propia: la curva se aplana notoriamente después de los −40 dB antes de truncar, reflejando el piso de ruido real del entorno de grabación, a diferencia de una cámara anecoica o un recinto muy silencioso.
+
+![Curva de Schroeder — RI medida](m3/Imagenes/schroeder_lundeby_t30_ri_medida.png)
+
+*Figura 20: curva de Schroeder, truncamiento de Lundeby y ajuste T20/T30 — RI medida (propia).*
+
+Con esas curvas ya validadas visualmente, las figuras 21 a 23 comparan directamente el T30 calculado por banda de octava entre RIR-API y REW.
+
+![T30 Elveden Hall — RIR-API vs REW](m3/Imagenes/t30_comparativa_elveden_hall.png)
+
+*Figura 21: comparación de T30 por banda, RIR-API vs REW — Elveden Hall.*
+
+![T30 Maes Howe — RIR-API vs REW](m3/Imagenes/t30_comparativa_maes_howe.png)
+
+*Figura 22: comparación de T30 por banda, RIR-API vs REW — Maes Howe.*
+
+En la figura 22, la banda de 125 Hz muestra la mayor divergencia de las seis bandas (2.317 s vs 2.730 s en Elveden Hall, 0.733 s vs 0.606 s en Maes Howe), consistente con la baja densidad modal a bajas frecuencias en recintos chicos, que hace que el resultado sea más sensible a diferencias finas entre el filtro de octava de RIR-API y el de REW. Aun así, ambos casos quedan dentro de la tolerancia de ±0.5 s que exige la consigna.
+
+![T30 RI procesada — RIR-API vs REW](m3/Imagenes/t30_comparativa_ri_procesada_medida.png)
+
+*Figura 23: comparación de T30 por banda, RIR-API vs REW — RI procesada (medida).*
+
+La Tabla 4 resume la diferencia máxima (peor banda de las seis) entre RIR-API y REW, por parámetro y por RI, con la tolerancia de ±0.5 s que exige la consigna para EDT/T20/T30:
+
+| RI | EDT | T20 | T30 |
+|---|---|---|---|
+| Elveden Hall | 0.206 s ✓ | 0.291 s ✓ | 0.414 s ✓ |
+| Maes Howe | 0.196 s ✓ | 0.079 s ✓ | 0.127 s ✓ |
+| RI procesada (medida) | 0.029 s ✓ | 0.021 s ✓ | 0.023 s ✓ |
+
+*Tabla 4: diferencia máxima entre RIR-API y REW, por parámetro y por RI.*
+
+T20 y T30 pasan la validación en las tres RIs y en las seis bandas, ampliamente dentro de tolerancia — el peor caso es T30 en Elveden Hall a 125 Hz, con 0.414 s de diferencia (RIR-API = 2.317 s vs REW = 2.730 s), cercano al límite pero todavía dentro de los ±0.5 s.
+
+A modo de referencia, las Tablas 5, 6 y 7 muestran el detalle completo por banda (125 a 4000 Hz) de EDT, T20 y T30 para las tres RIs.
 
 | Parámetro | Banda (Hz) | RIR-API | REW | Diferencia | Dentro de tolerancia |
-|-----------|:----------:|:-------:|:---:|:----------:|:--------------------:|
-| EDT | 125 | | | | |
-| EDT | 250 | | | | |
-| EDT | 500 | | | | |
-| EDT | 1000 | | | | |
-| EDT | 2000 | | | | |
-| EDT | 4000 | | | | |
-| T20 | 125 | | | | |
-| T20 | 250 | | | | |
-| T20 | 500 | | | | |
-| T20 | 1000 | | | | |
-| T20 | 2000 | | | | |
-| T20 | 4000 | | | | |
-| T30 | 125 | | | | |
-| T30 | 250 | | | | |
-| T30 | 500 | | | | |
-| T30 | 1000 | | | | |
-| T30 | 2000 | | | | |
-| T30 | 4000 | | | | |
-| C80 | 500 | | | | |
-| C80 | 1000 | | | | |
-| C80 | 2000 | | | | |
+|---|---|---|---|---|---|
+| EDT | 125 | 2.106s | 2.212s | -0.106s | Sí |
+| EDT | 250 | 3.178s | 3.384s | -0.206s | Sí |
+| EDT | 500 | 4.367s | 4.416s | -0.049s | Sí |
+| EDT | 1000 | 4.007s | 3.957s | +0.050s | Sí |
+| EDT | 2000 | 3.649s | 3.650s | -0.001s | Sí |
+| EDT | 4000 | 2.570s | 2.652s | -0.082s | Sí |
+| T20 | 125 | 2.336s | 2.627s | -0.291s | Sí |
+| T20 | 250 | 3.417s | 3.605s | -0.188s | Sí |
+| T20 | 500 | 4.311s | 4.255s | +0.056s | Sí |
+| T20 | 1000 | 4.124s | 4.119s | +0.005s | Sí |
+| T20 | 2000 | 3.895s | 3.859s | +0.036s | Sí |
+| T20 | 4000 | 2.792s | 2.903s | -0.111s | Sí |
+| T30 | 125 | 2.317s | 2.730s | -0.414s | Sí |
+| T30 | 250 | 3.408s | 3.567s | -0.159s | Sí |
+| T30 | 500 | 4.284s | 4.202s | +0.082s | Sí |
+| T30 | 1000 | 4.110s | 4.089s | +0.021s | Sí |
+| T30 | 2000 | 3.904s | 3.862s | +0.042s | Sí |
+| T30 | 4000 | 2.858s | 3.001s | -0.143s | Sí |
 
-**Tolerancia:** ±0.5 s para EDT, T20, T30 · ±1 dB para C80
+*Tabla 5: EDT, T20 y T30 por banda de octava, RIR-API vs REW — Elveden Hall.*
+
+| Parámetro | Banda (Hz) | RIR-API | REW | Diferencia | Dentro de tolerancia |
+|---|---|---|---|---|---|
+| EDT | 125 | 0.631s | 0.596s | +0.035s | Sí |
+| EDT | 250 | 0.339s | 0.535s | -0.196s | Sí |
+| EDT | 500 | N/A | 0.402s | - | - |
+| EDT | 1000 | N/A | 0.252s | - | - |
+| EDT | 2000 | N/A | 0.301s | - | - |
+| EDT | 4000 | N/A | N/A | - | - |
+| T20 | 125 | 0.689s | 0.610s | +0.079s | Sí |
+| T20 | 250 | 0.589s | 0.550s | +0.039s | Sí |
+| T20 | 500 | 0.519s | 0.507s | +0.012s | Sí |
+| T20 | 1000 | 0.528s | 0.492s | +0.036s | Sí |
+| T20 | 2000 | 0.451s | 0.433s | +0.018s | Sí |
+| T20 | 4000 | 0.458s | 0.382s | +0.076s | Sí |
+| T30 | 125 | 0.733s | 0.606s | +0.127s | Sí |
+| T30 | 250 | 0.611s | 0.579s | +0.032s | Sí |
+| T30 | 500 | 0.575s | 0.530s | +0.045s | Sí |
+| T30 | 1000 | 0.507s | 0.490s | +0.017s | Sí |
+| T30 | 2000 | 0.466s | 0.447s | +0.019s | Sí |
+| T30 | 4000 | 0.430s | 0.394s | +0.036s | Sí |
+
+*Tabla 6: EDT, T20 y T30 por banda de octava, RIR-API vs REW — Maes Howe.*
+
+| Parámetro | Banda (Hz) | RIR-API | REW | Diferencia | Dentro de tolerancia |
+|---|---|---|---|---|---|
+| EDT | 125 | 0.184s | 0.190s | -0.006s | Sí |
+| EDT | 250 | 0.154s | 0.135s | +0.019s | Sí |
+| EDT | 500 | 0.183s | 0.166s | +0.017s | Sí |
+| EDT | 1000 | 0.270s | 0.248s | +0.022s | Sí |
+| EDT | 2000 | 0.248s | 0.219s | +0.029s | Sí |
+| EDT | 4000 | 0.263s | 0.237s | +0.026s | Sí |
+| T20 | 125 | 0.277s | 0.279s | -0.002s | Sí |
+| T20 | 250 | 0.313s | 0.292s | +0.021s | Sí |
+| T20 | 500 | 0.287s | 0.294s | -0.007s | Sí |
+| T20 | 1000 | 0.270s | 0.271s | -0.002s | Sí |
+| T20 | 2000 | 0.232s | 0.232s | +0.000s | Sí |
+| T20 | 4000 | 0.251s | 0.252s | -0.001s | Sí |
+| T30 | 125 | 0.515s | 0.500s | +0.015s | Sí |
+| T30 | 250 | 0.294s | 0.292s | +0.002s | Sí |
+| T30 | 500 | 0.387s | 0.365s | +0.022s | Sí |
+| T30 | 1000 | 0.286s | 0.284s | +0.002s | Sí |
+| T30 | 2000 | 0.279s | 0.266s | +0.013s | Sí |
+| T30 | 4000 | 0.324s | 0.301s | +0.023s | Sí |
+
+*Tabla 7: EDT, T20 y T30 por banda de octava, RIR-API vs REW — RI procesada (medida).*
+
+**Tolerancia exigida por la consigna:** ±0.5 s para EDT, T20 y T30.
 
 ### 4.4 Tests automatizados
 
