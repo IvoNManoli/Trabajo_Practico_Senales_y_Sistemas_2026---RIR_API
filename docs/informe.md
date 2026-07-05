@@ -7,6 +7,51 @@
 
 ---
 
+## Índice
+
+- [Resumen](#resumen)
+- [1. Introducción](#1-introducción)
+- [2. Marco Teórico](#2-marco-teórico)
+  - [2.1 Ruido rosa](#21-ruido-rosa)
+  - [2.2 Sine sweep logarítmico (Farina, 2000)](#22-sine-sweep-logarítmico-farina-2000)
+  - [2.3 Filtros de banda de octava (IEC 61260)](#23-filtros-de-banda-de-octava-iec-61260)
+  - [2.4 Integral de Schroeder (Energy Decay Curve)](#24-integral-de-schroeder-energy-decay-curve)
+  - [2.5 Parámetros acústicos ISO 3382](#25-parámetros-acústicos-iso-3382)
+  - [2.6 Regresión lineal por mínimos cuadrados](#26-regresión-lineal-por-mínimos-cuadrados)
+- [3. Desarrollo Experimental](#3-desarrollo-experimental)
+  - [3.1 Arquitectura del software](#31-arquitectura-del-software)
+  - [3.2 Flujo de procesamiento completo](#32-flujo-de-procesamiento-completo)
+  - [3.3 Milestone 1 — Generación de señales](#33-milestone-1-generación-de-señales)
+    - [3.3.1 Generación de ruido rosa](#331-generación-de-ruido-rosa)
+    - [3.3.2 Generación de sine sweep y filtro inverso](#332-generación-de-sine-sweep-y-filtro-inverso)
+    - [3.3.3 Reproducción y grabación simultánea](#333-reproducción-y-grabación-simultánea)
+  - [3.4 Milestone 2 — Procesamiento de la RI](#34-milestone-2-procesamiento-de-la-ri)
+    - [3.4.1 Carga de audio y respuesta al impulso](#341-carga-de-audio-y-respuesta-al-impulso)
+    - [3.4.2 Filtro de banda de octava](#342-filtro-de-banda-de-octava)
+    - [3.4.3 Síntesis de respuesta al impulso artificial](#343-síntesis-de-respuesta-al-impulso-artificial)
+    - [3.4.4 Obtención de RI a partir de la grabación de un sweep senoidal](#344-obtención-de-ri-a-partir-de-la-grabación-de-un-sweep-senoidal)
+    - [3.4.5 Cambio de escala: La escala logarítmica](#345-cambio-de-escala-la-escala-logarítmica)
+  - [3.5 Milestone 3 — Análisis acústico y API REST](#35-milestone-3-análisis-acústico-y-api-rest)
+    - [3.5.1 Suavizado de señales](#351-suavizado-de-señales)
+    - [3.5.2 Integral de Schroeder](#352-integral-de-schroeder)
+    - [3.5.4 Regresión lineal](#354-regresión-lineal)
+    - [3.5.5 Método Lundeby](#355-método-lundeby)
+    - [3.5.6 Cálculo de parámetros acústicos](#356-cálculo-de-parámetros-acústicos)
+    - [3.5.7 Convolución con audio](#357-convolución-con-audio)
+  - [3.6 API REST](#36-api-rest)
+- [4. Resultados](#4-resultados)
+  - [4.1 Resultados de validación de generación de señales](#41-resultados-de-validación-de-generación-de-señales)
+  - [4.2 Resultados de validación del procesamiento de respuestas al impulso](#42-resultados-de-validación-del-procesamiento-de-respuestas-al-impulso)
+  - [4.3 Validación M3 — Parámetros acústicos](#43-validación-m3-parámetros-acústicos)
+  - [4.4 Tests automatizados](#44-tests-automatizados)
+- [5. Conclusiones](#5-conclusiones)
+- [6. Referencias](#6-referencias)
+- [Anexo: Log de Desarrollo con IA](#anexo-log-de-desarrollo-con-ia)
+  - [Herramientas utilizadas](#herramientas-utilizadas)
+  - [Reflexión general](#reflexión-general)
+
+---
+
 ## Resumen
 
 Se desarrolló una API REST en Python (FastAPI) para el cálculo de parámetros acústicos de salas a partir de respuestas al impulso (RI), siguiendo la norma ISO 3382. El sistema implementa generación de señales de excitación, procesamiento de RI y cálculo de los parámetros EDT, T10, T20, T30, D50 y C80 por banda. La arquitectura sigue un modelo de tres capas que separa el procesamiento DSP de la lógica HTTP. Se validaron los resultados comparando contra el software de uso comercial REW (Room EQ Wizard) con dos respuestas al impulso reales de la base de datos OpenAIR y una respuesta al impulso medida con las funciones de la API. Las diferencias máximas obtenidas fueron de ±0.4 s en T30 en un único caso en la banda de 125 Hz, aunque se sitúa en valores dentro de la tolerancia de ±0.5 según la norma. Adicionalmente, la API incluye la función de convolucionar audio con la RI deseada a modo de validación. 
@@ -23,7 +68,7 @@ El objetivo de este trabajo es implementar un sistema completo de medición y an
 3. **Milestone 3 — Análisis acústico y API REST**
 Pueden entenderse a las Milestones como fases del proyecto. Si bien en algunos casos los objetivos de cada milestone son independientes de las otras, en muchas ocasiones el desarrollo de las milestones posteriores dependieron de las anteriores.
 
-En la Milestone 1 se implementaron las señales de excitación necesarias para medir una sala: ruido rosa (densidad espectral 1/f) y sine sweep logarítmico con su filtro inverso correspondiente según la técnica de Farina (**CITAR FARINA**). Si bien normalmente el ruido rosa no es utilizado para la medición y obtención de la RI, se incluye principalmente con la idea de brindar un recurso para realizar la calibración del software de reproducción del sine sweep. Además se incluyó la función de grabar y reproducir, que permite obtener la respuesta al impulso del recinto mediante los parlantes y el micrófono de la computadora (solo ejecutable através de script). 
+En la Milestone 1 se implementaron las señales de excitación necesarias para medir una sala: ruido rosa (densidad espectral 1/f) y sine sweep logarítmico con su filtro inverso correspondiente según la técnica de Farina (Farina, 2000). Si bien normalmente el ruido rosa no es utilizado para la medición y obtención de la RI, se incluye principalmente con la idea de brindar un recurso para realizar la calibración del software de reproducción del sine sweep. Además se incluyó la función de grabar y reproducir, que permite obtener la respuesta al impulso del recinto mediante los parlantes y el micrófono de la computadora (solo ejecutable através de script). 
 
 La Milestone 2 cubre el procesamiento de la respuesta al impulso: carga de archivos de audio (WAV/FLAC), obtención de la RI a partir de la grabación del sine sweep mediante deconvolución, filtrado por bandas de octava, conversión a escala logarítmica (dB) y generación de una RI sintética para posteriormente validar los cálculos de parámetros acústicos.  Es la etapa que transforma una grabación cruda en una RI lista para analizar.
 
@@ -31,13 +76,13 @@ Finalmente, la Milestone 3 agrega el análisis acústico propiamente dicho. Desd
 
 A modo de ofrecer un método de validación subjetiva, la API brinda la posibilidad de realizar una convolución de un audio cargado con una RI cargada o una RI sintetizada según los parámetros seleccionados, mediante el algoritmo de FFT (Fast Fourier Transform). Se desarrollará este aspecto y sus decisiones en la sección de metodología.
 
-El alcance del análisis de parámetros acústicos incluye las bandas de octava de 125 Hz a 16 kHz, archivos WAV/FLAC como entrada, y devolución de resultados en JSON y WAV. No se incluye soporte para señales estéreo ni corrección de Lundeby activada por defecto (disponible como opción).
+El alcance del análisis de parámetros acústicos incluye las bandas de octava de 125 Hz a 16 kHz, archivos WAV/FLAC como entrada, y devolución de resultados en JSON y WAV.
 
 ---
 
 ## 2. Marco Teórico
 
-### 2.1 Ruido rosa (1/f)
+### 2.1 Ruido rosa
 
 El ruido rosa se define como un ruido cuya energía por octava es constante. Eso implica que en las bandas más graves, al haber menos frecuencias, la energía por frecuencia sea mayor que en las bandas agudas. Es decir, puedo pensar que la "cantidad de energía por frecuencia" cae según aumenta la frecuencia. No obstante, en vez de energía se utiliza la potencia, dado que permite independizarnos del tiempo de integración (si integro en tiempos más largos, la energía es mayor, pero la potencia es la misma). 
 
@@ -75,7 +120,7 @@ $$y(t) * x_{\text{inv}}(t) \approx h(t) \tag{5}$$
 
 ### 2.3 Filtros de banda de octava (IEC 61260)
 
-Por definición, las frecuencias de corte de un filtro de octava centrado en $f_c$ se aprecian en las ecuaciones 6 y 7:
+Por definición (IEC 61260-1:2014), las frecuencias de corte de un filtro de octava centrado en $f_c$ se aprecian en las ecuaciones 6 y 7:
 
 $$f_{\text{inf}} = \frac{f_c}{\sqrt{2}} \tag{6}$$
 
@@ -85,7 +130,7 @@ En metodología se explicará en más detalle de qué manera fueron implementado
 
 ### 2.4 Integral de Schroeder (Energy Decay Curve)
 
-La integral de Schroeder representa el decaimiento de energía acústica mediante integración inversa (ecuación 8). La ecuación 9 indica el análogo discreto:
+La integral de Schroeder (Schroeder, 1965) representa el decaimiento de energía acústica mediante integración inversa (ecuación 8). La ecuación 9 indica el análogo discreto:
 
 $$E(t) = \int_{t}^{\infty} h^2(\tau) \, d\tau \tag{8}$$
 
@@ -225,9 +270,9 @@ Archivo WAV/FLAC
 
 Se desarrolló la función `generar_ruido_rosa()` que recibe como argumentos la duración deseada como objeto flotante y la frecuencia de muestreo objeto entero, y devuelve un array de Numpy con el ruido rosa. En cuanto al algoritmo, la metodología aplicada consistió en crear ruido blanco con distribución normal mediante una función de la librería Numpy. Posteriormente al array creado se le aplicó la transformada rápida de fourier (FFT) para convertir a un vector en el dominio frecuencial, donde cada argumento representa un número complejo y cada índice una frecuencia. También se creó un vector de frecuencias, para luego dividir al vector de la transformada por este vector de frecuencias y así aplicar la ecuación 1 para obtener un vector de ruido rosa. Finalmente se aplicó la transformada inversa para obtener nuevamente un array en el dominio temporal y además se le aplicó una normalización entre -0,8 y 0,8, liberando así un margen de seguridad para evitar cualquier tipo de distorsión digital.
 
-Se optó por el algoritmo de la FFT frente a otros como Voss-Mccartney por una mayor simplicidad conceptual y de sintáxis. No obstante, para garantizar un buen resultado se implementaron diversos test de control (pytest). Dentro de los test de ruido rosa, la mayoría cumple un rol trivial, como por ejemplo verificar que la salida de la función sea un array, o que esté normalizada. No obstante, el test más fundamental fue el de verificar que la pendiente de la densidad espectral de potencia sea efectivamente de -3 dB por octava. Este test es crucial, y pasarlo garantiza que el ruido sea efectivamente rosa. Internamente el test utiliza el método de Welch de la librería `scipy.signal`.
+Se optó por el algoritmo de la FFT frente a otros como Voss-McCartney (Voss & Clarke, 1978) por una mayor simplicidad conceptual y de sintáxis. No obstante, para garantizar un buen resultado se implementaron diversos test de control (pytest). Dentro de los test de ruido rosa, la mayoría cumple un rol trivial, como por ejemplo verificar que la salida de la función sea un array, o que esté normalizada. No obstante, el test más fundamental fue el de verificar que la pendiente de la densidad espectral de potencia sea efectivamente de -3 dB por octava. Este test es crucial, y pasarlo garantiza que el ruido sea efectivamente rosa. Internamente el test utiliza el método de Welch de la librería `scipy.signal`.
 
-El método de Welch estima la densidad espectral de potencia dividiendo la señal en segmentos solapados, calculando el periodograma (FFT) de cada uno y promediándolos. Se prefirió frente a una FFT simple porque el periodograma de una única FFT es un estimador muy ruidoso de la PSD, ya que su varianza no mejora aunque la señal sea más larga, mientras que promediar varios segmentos suaviza esas fluctuaciones y da una estimación mucho más estable de la pendiente real del espectro, necesaria para verificar con confianza el -3 dB/octava esperado.
+El método de Welch (Welch, 1967) estima la densidad espectral de potencia dividiendo la señal en segmentos solapados, calculando el periodograma (FFT) de cada uno y promediándolos. Se prefirió frente a una FFT simple porque el periodograma de una única FFT es un estimador muy ruidoso de la PSD, ya que su varianza no mejora aunque la señal sea más larga, mientras que promediar varios segmentos suaviza esas fluctuaciones y da una estimación mucho más estable de la pendiente real del espectro, necesaria para verificar con confianza el -3 dB/octava esperado.
 
 ## 3.3.2 Generación de sine sweep y filtro inverso
 
@@ -272,9 +317,9 @@ Esta función cuenta con siete tests. Se verifica que una ruta inexistente lance
 
 ## 3.4.2 Filtro de banda de octava
 
-Para conocer los parámetros acústicos no basta con un índice global en todas las frecuencias, dado que el comportamiento en cada frecuencia es crucial para el análisis acústico. Es por eso que los software de medición de parámetros acústicos reportan sus datos en bandas. En este caso la API cuenta con un filtro únicamente de ancho de banda de octava. Esa es la finalidad de la función `filtro_octava()`, que recibe como entrada a la señal, las frecuencias centrales de las bandas deseadas, la frecuencia de muestreo y el orden del filtro Butterworth (por defecto 4).
+Para conocer los parámetros acústicos no basta con un índice global en todas las frecuencias, dado que el comportamiento en cada frecuencia es crucial para el análisis acústico. Es por eso que los software de medición de parámetros acústicos reportan sus datos en bandas. En este caso la API cuenta con un filtro únicamente de ancho de banda de octava. Esa es la finalidad de la función `filtro_octava()`, que recibe como entrada a la señal, la frecuencia central de la banda deseada, la frecuencia de muestreo y el orden del filtro Butterworth (por defecto 4). Como resultado devuelve un array con la señal filtrada en la banda seleccionada.
 
-Un filtro Butterworth es un tipo de filtro analógico/digital cuya característica distintiva es tener una respuesta en magnitud maximalmente plana, es decir, dentro de la banda de paso. No presenta ripple (ondulaciones) ni en la banda de paso ni en la de rechazo, a diferencia de otras familias como Chebyshev (que tolera ripple en la banda de paso o de rechazo a cambio de una caída más abrupta) o el elíptico (que tiene ripple en ambas bandas, pero la transición más pronunciada de todas para un mismo orden). Esa planicie tiene un costo: para una misma pendiente de caída, un Butterworth necesita mayor orden que un Chebyshev o un elíptico. Otra propiedad importante es que, por definición matemática, su magnitud cae exactamente a −3 dB en la frecuencia de corte, sin importar el orden del filtro, una referencia útil para verificar que el filtro esté bien diseñado.
+Un filtro Butterworth (Butterworth, 1930) es un tipo de filtro analógico/digital cuya característica distintiva es tener una respuesta en magnitud maximalmente plana, es decir, dentro de la banda de paso. No presenta ripple (ondulaciones) ni en la banda de paso ni en la de rechazo, a diferencia de otras familias como Chebyshev (que tolera ripple en la banda de paso o de rechazo a cambio de una caída más abrupta) o el elíptico (que tiene ripple en ambas bandas, pero la transición más pronunciada de todas para un mismo orden). Esa planicie tiene un costo: para una misma pendiente de caída, un Butterworth necesita mayor orden que un Chebyshev o un elíptico. Otra propiedad importante es que, por definición matemática, su magnitud cae exactamente a −3 dB en la frecuencia de corte, sin importar el orden del filtro, una referencia útil para verificar que el filtro esté bien diseñado.
 
 La ventaja de utilizar específicamente un filtro Butterworth, y no Chebyshev o elíptico en el contexto de medición de parámetros acústicos, es por la ausencia de ripple en la banda de paso.Si el filtro tuviera ondulaciones, algunas frecuencias dentro de la misma banda de octava quedarían con más o menos energía que otras de forma artificial, y como los parámetros acústicos se calculan a partir de la energía de la señal filtrada, cualquier ripple se traduciría directamente en un sesgo en esos cálculos. La respuesta plana del Butterworth garantiza que, dentro de la banda, todas las frecuencias se atenúen (o dejen pasar) de manera uniforme, preservando la relación de energía real de la señal en esa banda — algo más importante acá que lograr una transición más abrupta entre bandas.
 
@@ -400,7 +445,7 @@ Esta función tiene tres tests. El primero verifica el caso más simple: una rec
 
 ## 3.5.5 Método Lundeby
 
-El método Lundeby es un método para truncar el piso de ruido de la curva de Schroeder. El problema de la integral de Schroeder es que no sabe dónde empieza el ruido, por lo que si se le da una RI de mucha duración, considerará al piso de ruido en la integral y eso resultará posteriormente en un peor ajuste lineal. Para solventar esta carencia, el método Lundeby propone separar al tiempo en bloques de 10 ms (ventanas), hacer una estimación del nivel del piso de ruido utilizando el último 10% de la señal, buscar el primer bloque donde la energía cae dentro de un margen de 10 dB cercanos al piso de ruido, y realizar un ajuste lineal entre el inicio de la curva y ese bloque. Luego, se busca la intersección entre esa recta ajustada y el piso de ruido calculado, y promedia el nivel de la señal luego de esa intersección, para obtener un nuevo nivel de piso de ruido y así repetir todo el proceso nuevamente.  
+El método Lundeby (Lundeby et al., 1995) es un método para truncar el piso de ruido de la curva de Schroeder. El problema de la integral de Schroeder es que no sabe dónde empieza el ruido, por lo que si se le da una RI de mucha duración, considerará al piso de ruido en la integral y eso resultará posteriormente en un peor ajuste lineal. Para solventar esta carencia, el método Lundeby propone separar al tiempo en bloques de 10 ms (ventanas), hacer una estimación del nivel del piso de ruido utilizando el último 10% de la señal, buscar el primer bloque donde la energía cae dentro de un margen de 10 dB cercanos al piso de ruido, y realizar un ajuste lineal entre el inicio de la curva y ese bloque. Luego, se busca la intersección entre esa recta ajustada y el piso de ruido calculado, y promedia el nivel de la señal luego de esa intersección, para obtener un nuevo nivel de piso de ruido y así repetir todo el proceso nuevamente.  
 
 La función `metodo_lundeby()` implementa este algoritmo llamando directamente a `regresion_lineal()`,definiendo una función auxiliar interna llamada `_primer_cruce_sostenido()`.En vez de tomar como válido el primer bloque que cae por debajo del umbral, esa función auxiliar exige varios bloques consecutivos por debajo del margen de 10 dB, y descarta cualquier candidato dentro de los primeros bloques de la señal, precisamente para no confundir un nulo modal aislado (algo típico en bandas graves como 125 Hz, donde hay poca densidad de modos) con el verdadero comienzo del piso de ruido. A esto se suma otra salvaguarda dentro del bucle principal: cada vez que se reestima el nivel de ruido tras un nuevo truncamiento, ese nuevo valor solo se acepta si no supera en más de 3 dB a la estimación de referencia inicial, evitando que el algoritmo entre en una realimentación positiva donde, iteración tras iteración, el truncamiento se corre cada vez más temprano devorando cola reverberante real en vez de ruido. El proceso se repite hasta que el punto de truncamiento deja de moverse de una iteración a la siguiente, con un tope de 15 iteraciones para garantizar que la función siempre termine.
 
@@ -436,7 +481,7 @@ Como se mencionó en la introducción, además del análisis de parámetros la A
 
 El problema con el que se enfrenta esta función es de índole práctico. Al utilizar una RI y un audio de distintas fuentes, es altamente probable que cada uno contenga una frecuencia de muestreo diferente. Por ello, si las frecuencias de muestreo difirieran, convolucionar directamente daría un resultado con el tono y la duración incorrectos. Para evitarlo, si las frecuencias no coinciden, uno de los dos audios debe resamplearse a la frecuencia del otro. Se decidió resamplear la RI a la frecuencia del audio dado que el audio contiene información más valiosa para rescatar entre sus muestras que la RI, de quien solo se toma la tendencia de decaimiento para modificar la escucha del audio original. En otras palabras, resulta mucho más valiosa la información del audio a escuchar que la RI de la cual se quiere adicionar un poco de información.
 
-Para realizar el resampleo se utilizó `resample_poly()` de `scipy.signal`. En términos simples, esta función cambia la cantidad de muestras por segundo de una señal, insertando o descartando muestras según haga falta. No obstante, la función `resample_poly(RI, f_up, f_down)` no recibe directamente las dos frecuencias de muestreo, sino una relación de enteros "f_up/f_down" que indica en qué proporción cambiar la cantidad de muestras. Para obtener cada una primero se calcula el mínimo común denominador de ambas frecuencias de muestreo y luego se dividie a las frecuencias de muestreos por ese valor. En el caso de "f_up" se toma como numerador la frecuencia del audio, y viceversa. Esto garantiza que la relación entre "f_up" y "f_down" sea la fracción más simple posible, dando como resultado un número natural. 
+Para realizar el resampleo se utilizó `resample_poly()` de `scipy.signal`. En términos simples, esta función cambia la cantidad de muestras por segundo de una señal, insertando o descartando muestras según haga falta. No obstante, la función `resample_poly(RI, f_up, f_down)` no recibe directamente las dos frecuencias de muestreo, sino una relación de enteros "f_up/f_down" que indica en qué proporción cambiar la cantidad de muestras. Para obtener cada una primero se calcula el máximo común divisor de ambas frecuencias de muestreo y luego se dividie a las frecuencias de muestreos por ese valor. En el caso de "f_up" se toma como numerador la frecuencia del audio, y viceversa. Esto garantiza que la relación entre "f_up" y "f_down" sea la fracción más simple posible, dando como resultado un número natural. 
 
 Luego de realizar el resampleo se procede a realizar la convolución. Una vez más el corazón de la función es `fftconvolve()` de `scipy.signal` (en modo "full para conservar todo el audio). Tal como se mencionó en el caso del sine sweep, esta herramienta resulta mucho más eficiente que realizar una convolución directa. 
 
@@ -630,7 +675,7 @@ Las Tablas 4, 5 y 6 muestran el detalle completo por banda (125 a 4000 Hz) de ED
 | T20 | 1000 | 4.123s | 4.119s | +0.004s | Sí |
 | T20 | 2000 | 3.842s | 3.859s | -0.017s | Sí |
 | T20 | 4000 | 2.765s | 2.903s | -0.138s | Sí |
-| T30 | 125 | 2.250s | 2.730s | -0.480s | Sí |
+| T30 | 125 | 2.250s | 2.650s | -0.400s | Sí |
 | T30 | 250 | 3.454s | 3.567s | -0.113s | Sí |
 | T30 | 500 | 4.194s | 4.202s | -0.008s | Sí |
 | T30 | 1000 | 4.088s | 4.089s | -0.001s | Sí |
@@ -739,7 +784,7 @@ La etapa de generación de señales y procesamiento de RI demostró resultados i
 
 No obstante, aunque las diferencias cumplían con la tolerancia, se observó una mayor desviación en las comparaciones con REW en las bandas de 125 Hz para algunas de las RIs descargadas de OpenAIR. Mientras que para la RI medida, los parámetros difieren en muy poco margen. Una hipótesis sobre este asunto es que se deba a alguna característica modal en las respuestas al impulso seleccionadas, que sea muy sensible a alguna diferencia de filtros entre RIR-API y REW. Por otro lado, la API se comportaba perfectamente a la hora de analizar las diferencias con una RI sintetizada, detalle que brinda una validación al software. De todas formas, las fluctuaciones en esa banda deberán ser inspeccionadas y debe repetirse el proceso con diferentes respuestas al impulso para descartar posibles fallas en el algoritmo.
 
-Dentro de las limitaciones a destacar está el hecho de que solo se soportan archivos en formato WAV/FLAC, y aunque se acepten formatos estéreo, se termina descartando uno de los canales para realizar todo el procesamiento en uno de ellos. En el futuro se implementará un algoritmo que permita entregar la informaión de cada canal procesada por separado, de modo de no despreciar toda la información aportada en la medición de una RI, junto con un soporte multicanal para mediciones "B-format" de acústica espacial. Por otro lado, otra de las limitaciones actuales del proyecto es el hecho de que solo se permite realizar filtrados por tercios de octava. En el futuro se buscará ampliar este campo incluyendo un filtro de tercio de octava, seleccionable como un servicio aparte.
+Dentro de las limitaciones a destacar está el hecho de que solo se soportan archivos en formato WAV/FLAC, y aunque se acepten formatos estéreo, se termina descartando uno de los canales para realizar todo el procesamiento en uno de ellos. En el futuro se implementará un algoritmo que permita entregar la informaión de cada canal procesada por separado, de modo de no despreciar toda la información aportada en la medición de una RI, junto con un soporte multicanal para mediciones "B-format" de acústica espacial. Por otro lado, otra de las limitaciones actuales del proyecto es el hecho de que solo se permite realizar filtrados por bandas de octava. En el futuro se buscará ampliar este campo incluyendo un filtro de tercio de octava, seleccionable como un servicio aparte.
 
 Finalmente, otro de los aspectos posibles que pueden explotarse es el hecho de implementar el cálculo de piso de ruido del algoritmo lundeby para calcular el onset en la función que obtiene la respuesta al impulso desde el sweep, hecho que no se consideró inicialmente puesto que el desarrollo de la función de deconvolución fue previo a Lundeby.
 
@@ -748,9 +793,13 @@ Finalmente, otro de los aspectos posibles que pueden explotarse es el hecho de i
 ## 6. Referencias
 
 - ISO 3382-1:2009. *Acoustics — Measurement of room acoustic parameters — Part 1: Performance spaces.* International Organization for Standardization.
+- IEC 61260-1:2014. *Electroacoustics — Octave-band and fractional-octave-band filters — Part 1: Specifications.* International Electrotechnical Commission.
 - Farina, A. (2000). *Simultaneous measurement of impulse response and distortion with a swept-sine technique.* 108th AES Convention, Paris.
 - Schroeder, M. R. (1965). New method of measuring reverberation time. *Journal of the Acoustical Society of America*, 37(3), 409–412.
 - Lundeby, A., Vigran, T. E., Bietz, H., & Vorländer, M. (1995). Uncertainties of measurements in room acoustics. *Acustica*, 81(4), 344–355.
+- Welch, P. D. (1967). The use of fast Fourier transform for the estimation of power spectra: A method based on time averaging over short, modified periodograms. *IEEE Transactions on Audio and Electroacoustics*, 15(2), 70–73.
+- Butterworth, S. (1930). On the theory of filter amplifiers. *Experimental Wireless and the Wireless Engineer*, 7, 536–541.
+- Voss, R. F., & Clarke, J. (1978). "1/f noise" in music: Music from 1/f noise. *The Journal of the Acoustical Society of America*, 63(1), 258–263.
 
 ---
 
