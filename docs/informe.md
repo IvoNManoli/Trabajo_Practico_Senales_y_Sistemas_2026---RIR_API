@@ -17,7 +17,6 @@ Se desarrolló una API REST en Python (FastAPI) para el cálculo de parámetros 
 
 La acústica de salas estudia cómo el sonido se propaga y decae en un recinto. Una serie de parámetros definidos por la norma ISO 3382 permiten cuantificar la calidad acústica para diferentes usos: reverberación (T60) para música, claridad (C80) para música, inteligibilidad (D50) para la palabra hablada. Conocer estos parámetros permiten realizar un análisis objetivo de la acústica de recintos más allá de la escucha subjetiva, lo cual brinda la posibilidad de tomar decisiones precisas sobre la adaptación y el uso de estos espacios según la finalidad determinada. En este contexto resulta conveniente el desarrollo de un software que brinde herramientas de cálculo y procesamiento para llevar a cabo esas mediciones. El formato API se destaca por su particularidad de ser fácilmente integrable dentro de cualquier software, brindando independencia entre el lenguaje y la plataforma, permitiendo el desacople entre cliente y servidor e incluyendo sus propios mecanismos de validación centralizada. Así, quien deba realizar un procesamiento de RI puede limitarse a subir un archivo WAV y obtener los parámetros deseados, sin necesidad de depender de su propio hardware o software.
 
-
 El objetivo de este trabajo es implementar un sistema completo de medición y análisis acústico. No solo aportando las herramientas de cálculo de parámetros acústicos, sino herramientas relacionadas con la medición y obtención de la respuesta al impulso, como veremos más adelante. Por organización, se dividió el desarrollo en tres etapas de producción, llamadas "Milestones":
 1. **Milestone 1 — Generación de señales**
 2. **Milestone 2 — Procesamiento de RI**
@@ -261,97 +260,150 @@ Un aspecto fundamental de esta función es que no se incluye como servicio de la
 
 ### 3.4 Milestone 2 — Procesamiento de la RI
 
-## 3.4.2 Carga de audio y respuesta al impulso
+## 3.4.1 Carga de audio y respuesta al impulso
 
 A la hora de analizar una respuesta al impulso es necesario brindar un servicio que permita cargar el audio al servidor. Esa es la función de `cargar_audio()`, que recibe una ruta a un archivo (para ejecutarlo vía script) o directamente un objeto file-like, y devuelve una tupla con la señal como array de Numpy en float64 y su frecuencia de muestreo. Internamente usa `soundfile.read()` para soportar tanto WAV como FLAC en un único llamado, que ya se encarga de la conversión de formato y de dejar la señal en punto flotante. Antes de leer, si la entrada es una ruta en disco se verifica explícitamente que el archivo exista, lanzando un "FileNotFoundError" con un mensaje claro en vez de dejar que falle más abajo con un error críptico de la librería; cualquier otro problema de lectura (formato no soportado, archivo corrupto) se recaptura como "ValueError". Finalmente, la señal se normaliza dividiendo por su valor absoluto máximo y escalando a 0.9.
 
-Dado que el procesamiento de RI requiere señales mono, si el archivo cargado es estéreo (o multicanal), la función extrae un único canal antes de normalizar, devolviendo siempre un array 1D. Cuál canal extraer es un parámetro de la función (`canal`, por defecto `"L"`), que acepta `"L"`, `"R"` o directamente un índice entero de canal; si se pide un canal que no existe, se lanza un `ValueError`. Esto es necesario porque el resto del pipeline de procesamiento está diseñado para trabajar sobre una única señal temporal, no sobre un array con un eje de canales.
+Dado que el procesamiento de RI requiere señales mono, si el archivo cargado es estéreo (o multicanal), la función extrae un único canal antes de normalizar, devolviendo siempre un array 1D. Cuál canal extraer es un parámetro de la función, que acepta "L", "R" o directamente un índice entero de canal (por defecto L); si se pide un canal que no existe, se lanza un ValueError. Esto es necesario porque el resto del pipeline de procesamiento está diseñado para trabajar sobre una única señal temporal, no sobre un array con un eje de canales.
 
-La primera versión de esta función promediaba los canales entre sí ("downmix") en vez de elegir uno solo. Se descartó ese enfoque porque promediar dos señales que llegaron con distinto desfasaje temporal (por ejemplo, dos micrófonos a distinta distancia de las reflexiones del recinto) genera cancelaciones en ciertas frecuencias — un filtro peine — que distorsionarían la RI antes de siquiera empezar el análisis. Elegir un solo canal evita ese problema por completo, al costo de no aprovechar la información del canal descartado.
+Un objeto file-like ("similar a un archivo") es cualquier objeto de Python que se comporta como un archivo abierto en disco sin serlo necesariamente, aunque los datos vivan en otro lado, por ejemplo en memoria. El caso típico acá es "io.BytesIO", que envuelve bytes ya cargados en RAM, como el contenido de un archivo subido a la API para que pueda leerse con la misma interfaz que un archivo real. Se decidió hacer esto para permitir a la función aceptar tanto una ruta en disco como el contenido de un upload HTTP sin necesidad de guardarlo primero a un archivo temporal.
 
-Un objeto file-like ("similar a un archivo") es cualquier objeto de Python que se comporta como un archivo abierto en disco sin serlo necesariamente, aunque los datos vivan en otro lado, por ejemplo en memoria. El caso típico acá es "io.BytesIO", que envuelve bytes ya cargados en RAM, como el contenido de un archivo subido a la API para que pueda leerse con la misma interfaz que un archivo real. Se decidió Esto le permite a `cargar_audio()` aceptar tanto una ruta en disco como el contenido de un upload HTTP sin necesidad de guardarlo primero a un archivo temporal.
+Esta función cuenta con siete tests. Se verifica que una ruta inexistente lance FileNotFoundError; que la carga básica de un WAV mono funcione correctamente, chequeando forma, frecuencia de muestreo y normalización; que un archivo corrupto (bytes que no son audio) se traduzca en un ValueError; y que la señal devuelta quede siempre dentro de −1 y 1. Los tres restantes cubren la selección de canal: que, sin especificar nada, un archivo estéreo devuelva el canal L por defecto; que pasando explícitamente el canal "R" se obtenga el canal derecho; y que pedir un canal inexistente (por nombre o por índice fuera de rango) lance ValueError.
 
-**Decisiones clave:**
-- `soundfile` en lugar de `scipy.io.wavfile`: soporta WAV y FLAC, realiza la conversión y normalización automáticamente.
-- `always_2d=False`: para audio mono devuelve shape `(N,)` en lugar de `(N, 1)`, compatible con el resto del pipeline.
-- Verificación explícita de existencia antes de leer: permite lanzar `FileNotFoundError` con mensaje claro.
+## 3.4.2 Filtro de banda de octava
 
-#### `sintetizar_ri`
+Para conocer los parámetros acústicos no basta con un índice global en todas las frecuencias, dado que el comportamiento en cada frecuencia es crucial para el análisis acústico. Es por eso que los software de medición de parámetros acústicos reportan sus datos en bandas. En este caso la API cuenta con un filtro únicamente de ancho de banda de octava. Esa es la finalidad de la función `filtro_octava()`, que recibe como entrada a la señal, las frecuencias centrales de las bandas deseadas, la frecuencia de muestreo y el orden del filtro Butterworth (por defecto 4).
 
-Genera una RI artificial con T60 conocidos por banda para validación:
+Un filtro Butterworth es un tipo de filtro analógico/digital cuya característica distintiva es tener una respuesta en magnitud maximalmente plana, es decir, dentro de la banda de paso. No presenta ripple (ondulaciones) ni en la banda de paso ni en la de rechazo, a diferencia de otras familias como Chebyshev (que tolera ripple en la banda de paso o de rechazo a cambio de una caída más abrupta) o el elíptico (que tiene ripple en ambas bandas, pero la transición más pronunciada de todas para un mismo orden). Esa planicie tiene un costo: para una misma pendiente de caída, un Butterworth necesita mayor orden que un Chebyshev o un elíptico. Otra propiedad importante es que, por definición matemática, su magnitud cae exactamente a −3 dB en la frecuencia de corte, sin importar el orden del filtro, una referencia útil para verificar que el filtro esté bien diseñado.
 
-$$h(t) = \sum_{\text{banda}} \text{filtro\_octava}(\text{ruido}(t)) \cdot e^{-\alpha t}, \quad \alpha = \frac{6.908}{T_{60}}$$
+La ventaja de utilizar específicamente un filtro Butterworth, y no Chebyshev o elíptico en el contexto de medición de parámetros acústicos, es por la ausencia de ripple en la banda de paso.Si el filtro tuviera ondulaciones, algunas frecuencias dentro de la misma banda de octava quedarían con más o menos energía que otras de forma artificial, y como los parámetros acústicos se calculan a partir de la energía de la señal filtrada, cualquier ripple se traduciría directamente en un sesgo en esos cálculos. La respuesta plana del Butterworth garantiza que, dentro de la banda, todas las frecuencias se atenúen (o dejen pasar) de manera uniforme, preservando la relación de energía real de la señal en esa banda — algo más importante acá que lograr una transición más abrupta entre bandas.
 
-El coeficiente $\alpha$ se deriva de la definición de T60:
+Puntualmente, `filtro_octava()` calcula primero las frecuencias de corte inferior y superior de la banda, las normaliza respecto de la frecuencia de Nyquist, y con eso diseña un filtro pasabanda Butterworth mediante `scipy.signal.butter(orden, wn, btype="band", output="sos")`. Lo aplica con `sosfiltfilt` para obtener fase cero, evitando la distorsión de fase que introduciría un filtrado en una sola dirección.
 
-$$\alpha = \frac{3\ln(10)}{T_{60}} \approx \frac{6.908}{T_{60}}$$
+Esta función cuenta con tres tests. El primero verifica que una senoidal exactamente en la frecuencia central de la banda pase prácticamente sin atenuación (ganancia menor a 1 dB), comparando el RMS de la señal antes y después de filtrar. El segundo comprueba lo contrario: senoidales a la mitad y al doble de la frecuencia central (es decir, fuera de la banda de octava) deben atenuarse más de 20 dB. El tercero valida la respuesta en frecuencia del filtro contra la definición teórica de una banda de octava: calcula la respuesta con `scipy.signal.freqz` y confirma que la ganancia sea máxima (~0 dB) en la frecuencia central, y de exactamente −3 dB en ambas frecuencias de corte.
 
-**Decisiones clave:**
-- Import interno de `filtro_octava`: evita importación circular entre módulos.
-- Ruido blanco filtrado por banda: simula el modelo de campo difuso (reflexiones aleatorias).
+## 3.4.3 Síntesis de respuesta al impulso artificial
 
-#### `obtener_ri_desde_sweep`
+Para validar los cálculos de los parámetros acústicos resulta conveiniente generar una RI cuyo T60 real ya se conozca de antemano, algo que no se puede garantizar con una RI medida en un recinto real. Ese es el propósito de `sintetizar_ri()`: recibe un diccionario `{frecuencia_central: T60}` por banda, la frecuencia de muestreo y la duración deseada, y devuelve una respuesta al impulso artificial que decae exactamente con esos T60 conocidos, banda por banda.
 
-Deconvolución mediante convolución con el filtro inverso + recorte por onset basado en RMS:
+El modelo utilizado es ruido blanco filtrado por banda multiplicado por una envolvente exponencial decreciente, sumado entre todas las bandas del diccionario (ecuación 14):
 
-1. Se estima el RMS del ruido de fondo con el último 10% de la señal deconvolucionada.
-2. Se calcula un umbral 20 dB por encima del RMS: `umbral = rms_ruido × 10`.
-3. Se retrocede desde el pico hasta que la señal cae por debajo del umbral → onset.
-4. La RI se recorta desde ese onset.
+$$h(t) = \sum_{\text{banda}} \text{filtro\_octava}(\text{ruido}(t)) \cdot e^{-\alpha t}, \quad \alpha = \frac{6.908}{T_{60}} \tag{14}$$
 
-**Decisiones clave:**
-- `fftconvolve` (O(N log N)) en lugar de convolución directa (O(N²)): decisivo para señales de varios segundos.
-- `mode="full"`: conserva la cola de reverberación completa.
-- Retroceder desde el pico en lugar de buscar desde el inicio: evita falsos positivos por picos de ruido previos al sonido directo.
-- `margen_db=20.0` configurable: 20 dB es el estándar práctico; exposición como parámetro permite ajustarlo según la SNR de cada grabación.
+El coeficiente $\alpha$ se deriva directamente de la definición de T60 como el tiempo en que la energía cae 60 dB (ecuación 15):
 
-#### `filtro_octava`
+$$\alpha = \frac{3\ln(10)}{T_{60}} \approx \frac{6.908}{T_{60}} \tag{15}$$
 
-Filtro Butterworth pasabanda orden 4, fase cero (`filtfilt`), frecuencias de corte IEC 61260.
+La razón por la cuál se genera ruido blanco independiente para cada banda y se lo filtra con `filtro_octava()`, en vez de usar un tono puro en la frecuencia central es para simular el modelo de campo difuso. En una sala real, la cola de reverberación de cada banda no es un tono limpio sino la superposición de muchísimas reflexiones aleatorias con energía concentrada en esa banda, que es justamente lo que aporta el ruido filtrado. Además, el uso de un decaimiento exponencial en la ecuación 14 es debido a que el decaimiento físico teórico de las reflexiones en un recinto corresponde a una curva exponencial.
 
-**Decisiones clave:**
-- `filtfilt` en lugar de `lfilter`: aplica el filtro en dos pasadas cancelando la distorsión de fase. EDT y T60 dependen de la precisión temporal de la curva de decaimiento — esta decisión es crítica.
-- Butterworth en lugar de Chebyshev o elíptico: respuesta completamente plana en la banda de paso (sin ripple). Con ripple, algunas frecuencias tendrían más energía y la curva de Schroeder resultaría incorrecta.
-- `min(f_sup / nyq, 0.9999)`: evita que `butter` falle cuando la frecuencia de corte superior supera Nyquist en bandas altas.
+Por otro lado, `filtro_octava` se importa dentro de la función (no al principio del módulo) para evitar una importación circular entre `signal_utils.py` y `filter.py`.
 
-#### `a_escala_log`
+Finalmente, el resultado final se normaliza dividiendo por su valor absoluto máximo y escalando a 0.9, igual que en `cargar_audio()`, dejando el mismo margen de headroom en toda señal que sale del pipeline.
 
-Convierte amplitud lineal a dB normalizados a 0 dB en el pico, con piso en −120 dB.
+Esta función cuenta con dos tests. El primero simplemente verifica que la duración de la RI generada coincida con la solicitada, en cantidad de muestras. El segundo es el más relevante: genera una RI con un T60 objetivo conocido (2.0 s) en la banda de 1000 Hz, filtra el resultado por esa misma banda, calcula su integral de Schroeder en dB, y mide en qué instante la curva cruza los −60 dB. Ese T60 medido se compara contra el T60 objetivo con una tolerancia del 10%, confirmando que el modelo de síntesis (ruido filtrado + envolvente exponencial) efectivamente produce el tiempo de reverberación esperado y no solo una forma de onda que decae "más o menos" como se espera.
 
-**Decisiones clave:**
-- Aplicar el piso de −120 dB **antes** del logaritmo: si se aplicara después, `log10(0) = -inf` generaría NaN que se propagan silenciosamente.
-- Piso en −120 dB en lugar de `eps`: corresponde al límite práctico del rango dinámico en mediciones acústicas reales. `eps` daría ~−315 dB, sin sentido físico.
+## 3.4.4 Obtención de RI a partir de la grabación de un sweep senoidal
+
+Un servicio vital del proyecto es `obtener_ri_desde_sweep()`, que permite obtener la respuesta al impulso de un recinto a partir de la grabación real de un sine sweep. Recibe la grabación y el filtro inverso del sweep utilizado (los mismos que devuelve `generar_sine_sweep()`), y devuelve la RI estimada, ya recortada y normalizada.
+
+El fundamento es la deconvolución mediante convolución con el filtro inverso, tal como se planteó en la ecuación 5 del marco teórico: al convolucionar la grabación (sweep * h, donde h es la RI del recinto) con el filtro inverso del sweep, el resultado converge a una aproximación de h. La problemática en esta función es determinar cuándo se considera el inicio de la respuesta al impulso. En el caso de considerar el pico como el inicio, se despreciaría completamente toda la respuesta del recinto frente al ataque del impulso. Es por eso que se determinó un criterio de "onset" que determina desde dónde se considera el valor inicial de la respuesta al impulso. Para tener un mejor entendimiento de esta función se enumeran los siguientes pasos de su funcionalidad:
+
+1. Convoluciona la grabacion con filtro_inverso mediante `fftconvolve(..., mode="full")` de scipy.signal, obteniendo la RI cruda ("ri_full"), que incluye tanto la parte previa al sonido directo como toda la cola de reverberación. El "mode="full" es para conservar toda la señal resultante en vez de recortarla prematuramente.
+2. Estima el RMS del ruido de fondo usando el último 10% de esa señal, asumiendo que para ese punto la reverberación ya decayó y solo queda ruido.
+3. Calcula un umbral 20 dB por encima de ese RMS (llamado margen_db en la función, configurable, 20 dB por defecto).
+4. Ubica el pico de la RI mediante `np.argmax` del valor absoluto y retrocede muestra a muestra desde ahí hasta encontrar el primer punto donde la señal cae por debajo del umbral. Ese será el verdadero inicio del sonido directo. Si se buscara el valor que supera los 20 dB desde el inicio, un pico de ruido previo al sonido directo podría detectarse como un falso onset. Partir del pico garantizado (el sonido directo, siempre la muestra de mayor energía) y retroceder evita ese problema.
+5. Recorta la RI desde ese valor en adelante y la normaliza a 0.9 de pico para tener un margen.
+
+Las siguientes imágenes ilustran este proceso paso a paso sobre una RI real, medida en una sala con el script "medir_ri.py".
+
+Así se ve, en la Figura 3, la RI recién obtenida de la convolución, sin ningún recorte. Es una señal larga que contiene la respuesta al impulso del recinto (el pico de sonido directo y su cola de reverberación) precedida por una región de ruido de fondo.
+
+![RI medida — convolución completa](m2/imagenes/ri_medida_completa.png)
+
+*Figura 3: RI medida, convolución completa sin recorte.*
+
+La Figura 4 muestra el criterio para determinar el piso de ruido: se toma el último 10% de la convolución completa (la región sombreada), asumiendo que para ese tramo la reverberación ya decayó por completo y solo queda ruido de fondo de la grabación. Con eso se calcula el RMS del ruido, y el umbral de detección se fija 20 dB por encima de ese valor.
+
+![Estimación del piso de ruido en la convolución completa](m2/imagenes/ri_medida_piso_ruido.png)
+
+*Figura 4: Estimación del piso de ruido sobre la convolución completa.*
+
+Con ese umbral ya definido, la línea punteada de la Figura 5 marca el onset: el instante, retrocediendo desde el pico, a partir del cual la señal supera continuamente el umbral. Ahí es donde se recorta la señal. Todo lo anterior al onset se descarta por considerarse piso de ruido.
+![RI medida — convolución completa con umbral temporal](m2/imagenes/ri_medida_completa_onset.png)
+
+*Figura 5: RI medida con el umbral temporal de recorte (onset).*
+
+La Figura 6 muestra cómo queda la señal finalmente devuelta por `obtener_ri_desde_sweep()`, recortada desde el onset, conservando una fracción del ataque de la envolvente, para no perder información de la llegada temprana del sonido directo y normalizada a 0.9 de pico, ya lista para pasar al resto del pipeline de análisis.
+
+![RI medida — procesada](m2/imagenes/ri_medida_procesada.png)
+
+*Figura 6: RI medida, ya procesada por `obtener_ri_desde_sweep`.*
+
+Esta función cuenta con un test que valida el caso de uso completo de punta a punta: genera un sweep y su filtro inverso, define una RI conocida (un tono de 1000 Hz con decaimiento exponencial), simula la grabación convolucionando el sweep con esa RI, y aplica `obtener_ri_desde_sweep()` sobre esa grabación simulada. Como el recorte por onset puede introducir un pequeño desfasaje temporal entre la RI original y la recuperada, la comparación no se hace muestra a muestra sino por correlación cruzada normalizada entre ambas señales, calculada con `correlate` de `scipy.signal`, exigiendo que el pico de correlación supere 0.9, es decir, que la forma de onda recuperada sea prácticamente idéntica a la original, sea cual sea el corrimiento temporal que haya introducido la detección del onset.
+
+## 3.4.5 Cambio de escala: La escala logarítmica
+
+Muchos de los gráficos y funciones del proyecto (la curva de Schroeder, la envolvente de una RI, etc) se entienden mejor en escala logarítmica que en amplitud lineal, porque el oído y los parámetros acústicos de la norma trabajan en dB. Esa conversión la hace `a_escala_log()`, calculando el nivel en decibeles según la ecuación 16:
+
+$$L(t) = 20 \log_{10}\!\left(\frac{|h(t)|}{\max(|h|)}\right) \tag{16}$$
+
+De modo que el pico de la señal siempre quede normalizado a 0 dB y el resto de los valores queden expresados en dB relativos a ese pico.
+
+Antes de calcular el logaritmo, la función le aplica un piso a la relación de amplitudes, de forma que ningún valor caiga por debajo del equivalente a −120 dB. Esto es necesario porque una señal real casi siempre tiene tramos de silencio o valores muy cercanos a cero, y el logaritmo de cero es menos infinito. Aplicar el piso antes del logaritmo, en vez de después, evita ese problema de raíz. Se optó por un piso fijo de −120 dB en lugar de usar el porque −120 dB es un valor con sentido físico, aproximado al límite práctico del rango dinámico de una medición acústica real. También se contempla el caso borde de una señal completamente en silencio, con máximo absoluto igual a cero. En vez de dividir por cero, la función devuelve directamente un array del mismo largo lleno de −120 dB, el piso mínimo, que es la lectura correcta para una señal sin ninguna energía.
+
+Esta función tiene tres tests, todos con señales simples y valores conocidos de antemano para poder verificar el cálculo a mano. Uno confirma que el valor máximo de la señal de entrada efectivamente se traduce en 0 dB en la salida. Otro simplemente chequea que el tipo de retorno sea un array de Numpy. El último es el más significativo desde lo acústico toma una señal con un valor que es exactamente la mitad de otro, y verifica que la diferencia entre ambos en la salida sea de −6 dB.
 
 ### 3.5 Milestone 3 — Análisis acústico y API REST
 
-#### `suavizar_signal`
+## 3.5.1 Suavizado de señales
 
-Dos modos de suavizado:
+A la hora de representar visualmente una respuesta al impulso, los gráficos reales contienen fluctuaciones muy rápidas entre muestras que dificultan visualizar la tendencia de decaimiento. Es por eso que resulta conveniente aplicar un método de suavizado que permita reducir estas fluctuaciones. De eso se encarga `suavizar_signal()`, que admite dos modos de suavizado según el parámetro "ventana".
 
-- **Hilbert** (por defecto): envolvente instantánea $A(t) = |x(t) + j\hat{x}(t)|$ via `scipy.signal.hilbert`. No requiere elegir tamaño de ventana.
-- **Media móvil** (ventana int): $y[n] = \frac{1}{M}\sum_{k=0}^{M-1} x^2[n-k]$, aplicada sobre la energía.
+El modo por defecto, "hilbert", calcula la envolvente instantánea de la señal mediante la transformada de Hilbert de `scipy.signal`, según la ecuación 17:
 
-#### `integral_schroeder`
+$$A(t) = \left| x(t) + j\hat{x}(t) \right| \tag{17}$$
 
-Implementación eficiente usando `np.cumsum` sobre la señal invertida:
+Donde $\hat{x}(t)$ es la transformada de Hilbert de la señal original. Este modo es el preferido porque no requiere elegir ningún tamaño de ventana arbitrario, la envolvente sale directamente de la señal analítica. 
 
-```python
-energia = ri ** 2
-integral = np.cumsum(energia[::-1])[::-1]
-edc_db = 10.0 * np.log10(np.maximum(integral / integral[0], eps))
-```
+No obstante también se optó por otro método. Aceptando un entero como tamaño de ventana, se calcula una media móvil sobre la energía de la señal (la señal al cuadrado), según la ecuación 18:
 
-#### `regresion_lineal`
+$$y[n] = \frac{1}{M}\sum_{k=0}^{M-1} x^2[n-k] \tag{18}$$
 
-Implementación manual de mínimos cuadrados (sin `np.polyfit`):
+Donde $M$ es el tamaño de la ventana en muestras. Esta alternativa es más simple de entender, pero requiere elegir manualmente el valor de $M$, algo que la envolvente de Hilbert evita. 
 
-```python
-pendiente = (n * sum_xy - sum_x * sum_y) / (n * sum_x2 - sum_x**2)
-ordenada  = (sum_y - pendiente * sum_x) / n
-r2 = 1.0 - ss_res / ss_tot
-```
+No obstante ambos modos son válidos, y el método de la media móvil puede resultar más conveniente si se busca simplificar mucho más un gráfico para facilitar su entendimiento. Si se desea utilizar la media móvil, basta con seleccionar el tamaño de ventana en la entrada de la función.
 
-La pendiente en dB/s permite calcular $T = -60 / m$. Si $R^2 < 0.8$ o la pendiente es positiva (piso de ruido), el parámetro se devuelve como `None`.
+Finalmente, esta función cuenta con tres tests. Dos validan el modo Hilbert: uno confirma que la envolvente resultante nunca sea negativa (por ser un valor absoluto, tiene que cumplirse siempre), y otro que la señal suavizada conserve la misma longitud que la señal de entrada. El tercero valida el modo de media móvil, comprobando también que preserve la longitud original.
+
+## 3.5.2 Integral de Schroeder
+
+Tal como se planteó en la ecuación 9 del marco teórico, la curva de decaimiento energético se obtiene sumando, para cada instante $n$, toda la energía restante de la señal desde $n$ hasta el final. Esa es la responsabilidad de `integral_schroeder()`, recibir una RI (idealmente ya filtrada por banda) y devolver la curva de decaimiento en dB, normalizada a 0 dB en su primer valor.
+
+La implementación evita calcular esa suma de forma literal y en cambio aprovecha `np.cumsum` sobre la señal de energía invertida. Al sumar acumulativamente de atrás para adelante sobre la energía invertida da, al revertir el resultado, exactamente la misma suma que pide la ecuación 9, pero con mucho menos procesamiento y menor tiempo de respuesta. Una vez obtenida esa integral, se la convierte a dB normalizando por su primer valor (que es la energía total de la señal), según la ecuación 19:
+
+$$L[n] = 10 \log_{10}\!\left(\frac{E[n]}{E[0]}\right) \tag{19}$$
+
+De modo que la curva siempre arranca en 0 dB, es decir, con toda la energía todavía por delante, y decae a medida que $n$ avanza y hay menos energía remanente. Antes de aplicar el logaritmo se acota el cociente con un piso "EPS" (el épsilon de máquina, es decir, el número más pequeño que puede soportar) para evitar el mismo problema de log10(0) que ya se resolvió en `a_escala_log()`, solo que en este caso no importa que el piso sea demasiado bajo. Como caso borde, si la energía total de la señal es cero (una RI de puro silencio), la función devuelve directamente un array de "-inf" del mismo largo, en vez de dividir por cero.
+
+Esta función cuenta con cuatro tests. Los dos primeros son de forma: que la curva devuelta tenga la misma longitud que la RI de entrada, y que su primer valor sea efectivamente 0 dB. El tercero verifica que la curva sea monótonamente decreciente en toda su extensión, una propiedad que se cumple por construcción matemática (nunca se le puede sumar energía negativa a la integral) y que sirve como chequeo de que la implementación no tenga errores de signo o de indexado. El cuarto es el más relevante desde lo acústico. Se sintetiza una RI con un T60 conocido de antemano, calcula su integral de Schroeder, ajusta una recta por mínimos cuadrados en el rango típico de T30 (−5 a −35 dB), y verifica que el T60 estimado a partir de esa pendiente esté dentro de un 30% del valor real usado para sintetizar la señal, confirmando que la curva no solo decrece, sino que lo hace a la velocidad correcta.
+
+## 3.5.2 Integral de Schroeder
+
+En `regresion_lineal()` se implementa el método de cuadrados mínimos planteado en el marco teórico (ecuaciones 10 a 13). Recibe dos arrays, típicamente el tiempo y la curva de Schroeder en dB dentro del rango de interés, y devuelve la pendiente $m$, la ordenada al origen $b$ y el coeficiente de determinación $R^2$, calculados exactamente según esas mismas fórmulas.
+
+La implementación contempla dos casos borde que las fórmulas puras no resuelven por sí solas. El primero es cuando el denominador de la ecuación 11 da cero, algo que ocurre si todos los valores de $x$ son iguales entre sí (una recta horizontal). En ese caso no existe una pendiente bien definida, así que la función devuelve pendiente 0, la ordenada como el promedio de $y$, y $R^2 = 0$. El segundo es cuando la varianza total de $y$ (el denominador de la ecuación 13) es cero, es decir, todos los puntos $y$ son idénticos; ahí cualquier recta horizontal ajusta perfectamente, así que se devuelve $R^2 = 1$ en vez de una división por cero.
+
+Vale aclarar que esta función solo calcula el ajuste, no decide si ese ajuste es aceptable. Esa validación se deriva a las siguientes funciones del pipeline.
+
+Esta función tiene tres tests. El primero verifica el caso más simple: una recta perfectamente conocida ($y = 2x + 1$, sin ruido), confirmando que la pendiente y la ordenada recuperadas coincidan con los valores exactos usados para generarla. El segundo confirma que, para datos perfectamente lineales, el $R^2$ calculado sea exactamente 1.0, el máximo posible. El tercero prueba un caso más realista: una recta conocida ($y = 3x + 5$) a la que se le agrega ruido gaussiano, y verifica que la pendiente y la ordenada estimadas sigan estando razonablemente cerca de los valores reales pese al ruido, validando que el método sea robusto a pequeñas perturbaciones, no solo exacto en el caso ideal sin ruido.
+
+## 3.5.2 Método Lundeby
+
+El método Lundeby es un método para truncar el piso de ruido de la curva de Schroeder. El problema de la integral de Schroeder es que no sabe dónde empieza el ruido, por lo que si se le da una RI de mucha duración, considerará al piso de ruido en la integral y eso resultará posteriormente en un peor ajuste lineal. Para solventar esta carencia, el método Lundeby propone separar al tiempo en bloques de 10 ms (ventanas), hacer una estimación del nivel del piso de ruido utilizando el último 10% de la señal, buscar el primer bloque donde la energía cae dentro de un margen de 10 dB cercanos al piso de ruido, y realizar un ajuste lineal entre el inicio de la curva y ese bloque. Luego, se busca la intersección entre esa recta ajustada y el piso de ruido calculado, y promedia el nivel de la señal luego de esa intersección, para obtener un nuevo nivel de piso de ruido y así repetir todo el proceso nuevamente.  
+
+La función `metodo_lundeby()` implementa este algoritmo llamando directamente a `regresion_lineal()`,definiendo una función auxiliar interna llamada `_primer_cruce_sostenido()`.En vez de tomar como válido el primer bloque que cae por debajo del umbral, esa función auxiliar exige varios bloques consecutivos por debajo del margen de 10 dB, y descarta cualquier candidato dentro de los primeros bloques de la señal, precisamente para no confundir un nulo modal aislado (algo típico en bandas graves como 125 Hz, donde hay poca densidad de modos) con el verdadero comienzo del piso de ruido. A esto se suma otra salvaguarda dentro del bucle principal: cada vez que se reestima el nivel de ruido tras un nuevo truncamiento, ese nuevo valor solo se acepta si no supera en más de 3 dB a la estimación de referencia inicial, evitando que el algoritmo entre en una realimentación positiva donde, iteración tras iteración, el truncamiento se corre cada vez más temprano devorando cola reverberante real en vez de ruido. El proceso se repite hasta que el punto de truncamiento deja de moverse de una iteración a la siguiente, con un tope de 15 iteraciones para garantizar que la función siempre termine.
+
+Esta función cuenta con cuatro tests. Uno verifica simplemente los tipos de retorno y que el índice de truncamiento devuelto esté dentro del rango válido de la señal. Otro confirma que, al agregarle ruido de fondo real a una RI sintetizada, el truncamiento efectivamente ocurra antes del final de la señal (y no al final, como pasaría si no detectara el ruido). Un tercero compara dos versiones de la misma RI, una limpia y otra con ruido agregado, y verifica que la versión ruidosa trunque en un punto más temprano que la limpia, tal como se espera si el algoritmo está reaccionando al ruido y no ignorándolo. El último valida la precisión de la estimación en sí: agrega ruido de fondo con un nivel conocido de antemano y verifica que el nivel de ruido estimado por la función esté dentro de ±6 dB del valor real.
 
 #### `calcular_parametros_acusticos`
 
