@@ -264,9 +264,9 @@ Archivo WAV/FLAC
 
 
 
-### 3.3 Milestone 1 — Generación de señales
+## 3.3 Milestone 1 — Generación de señales
 
-## 3.3.1 Generación de ruido rosa
+### 3.3.1 Generación de ruido rosa
 
 Se desarrolló la función `generar_ruido_rosa()` que recibe como argumentos la duración deseada como objeto flotante y la frecuencia de muestreo objeto entero, y devuelve un array de Numpy con el ruido rosa. En cuanto al algoritmo, la metodología aplicada consistió en crear ruido blanco con distribución normal mediante una función de la librería Numpy. Posteriormente al array creado se le aplicó la transformada rápida de fourier (FFT) para convertir a un vector en el dominio frecuencial, donde cada argumento representa un número complejo y cada índice una frecuencia. También se creó un vector de frecuencias, para luego dividir al vector de la transformada por este vector de frecuencias y así aplicar la ecuación 1 para obtener un vector de ruido rosa. Finalmente se aplicó la transformada inversa para obtener nuevamente un array en el dominio temporal y además se le aplicó una normalización entre -0,8 y 0,8, liberando así un margen de seguridad para evitar cualquier tipo de distorsión digital.
 
@@ -274,7 +274,7 @@ Se optó por el algoritmo de la FFT frente a otros como Voss-McCartney (Voss & C
 
 El método de Welch (Welch, 1967) estima la densidad espectral de potencia dividiendo la señal en segmentos solapados, calculando el periodograma (FFT) de cada uno y promediándolos. Se prefirió frente a una FFT simple porque el periodograma de una única FFT es un estimador muy ruidoso de la PSD, ya que su varianza no mejora aunque la señal sea más larga, mientras que promediar varios segmentos suaviza esas fluctuaciones y da una estimación mucho más estable de la pendiente real del espectro, necesaria para verificar con confianza el -3 dB/octava esperado.
 
-## 3.3.2 Generación de sine sweep y filtro inverso
+### 3.3.2 Generación de sine sweep y filtro inverso
 
 La función responsable de crear el sine sweep y su filtro inverso fue **`generar_sine_sweep()`**, que recibe como argumentos la frecuencia inicial y final del barrido como objetos flotantes, la duración deseada como objeto flotante y la frecuencia de muestreo como objeto entero, y devuelve dos arrays de Numpy: el sweep y su filtro inverso. El algoritmo arma primero un vector de tiempo con `np.linspace`, calcula la constante $L$ de la ecuación 3 y a partir de ahí la fase instantánea, para finalmente aplicarle el seno y obtener el barrido. El filtro inverso se obtiene invirtiendo el array del sweep (`sweep[::-1]`) y multiplicándolo por una rampa exponencial decreciente que implementa la corrección de amplitud $A(t)$ de la ecuación 4, normalizando después a un pico de 1.0. Por último, tanto el sweep como su filtro inverso se multiplican por una ganancia de 0.5 (headroom de −6 dB) elegido arbitrariamente para evitar clipping al reproducirlos por hardware real.
 
@@ -284,7 +284,7 @@ Para corroborar su correcto funcionamiento, además de los test triviales se inc
 
 Puntualmente en el test, se generan un sweep y su filtro inverso de 5 segundos a 44100 Hz y se convolucionan con `fftconvolve`. Sobre el resultado se busca el índice de la muestra de mayor amplitud absoluta, que corresponde al pico del impulso recuperado. Para estimar el piso de ruido se enmascaran las 200 muestras centradas en ese pico (±100 muestras) y se promedia el valor absoluto de todas las muestras restantes. Finalmente se calcula la relación pico/piso en decibeles como 20·log10(pico/piso) y se verifica que sea de al menos 40 dB, el umbral mínimo para considerar que la deconvolución en Milestone 2  recuperará una RI con buena resolución temporal y bajo nivel de artefactos.
 
-## 3.3.3 Reproducción y grabación simultánea
+### 3.3.3 Reproducción y grabación simultánea
 
 Para poder medir una RI real en un recinto hace falta, además de generar la señal de excitación, un mecanismo que la reproduzca por un parlante y grabe simultáneamente la respuesta del recinto con un micrófono. Esa tarea la resuelve la función `reproducir_y_grabar()`, que recibe la señal a reproducir (mono o estéreo), la frecuencia de muestreo, la duración deseada de grabación y un tiempo de preroll (0.5 s por defecto), devolviendo un array de Numpy 1D con el audio capturado.
 
@@ -303,9 +303,9 @@ Los test fundamentales de esta función incluyen a  `test_acepta_senal_mono` , l
 
 Un aspecto fundamental de esta función es que no se incluye como servicio de la API. Esto es debido a que el acceso del servidor al micrófono y los parlantes del cliente requiere de ser informado y debe solicitar los permisos adecuados para hacerlo. Si el software pudiese acceder sin permisos se trataría de un malware, lo cual claramente no es la intención del proyecto. Dado que el correcto abordaje de esta temática es un tema de desconocimiento de los autores, se decidió limitar la ejecución de esta función vía script. 
 
-### 3.4 Milestone 2 — Procesamiento de la RI
+## 3.4 Milestone 2 — Procesamiento de la RI
 
-## 3.4.1 Carga de audio y respuesta al impulso
+### 3.4.1 Carga de audio y respuesta al impulso
 
 A la hora de analizar una respuesta al impulso es necesario brindar un servicio que permita cargar el audio al servidor. Esa es la función de `cargar_audio()`, que recibe una ruta a un archivo (para ejecutarlo vía script) o directamente un objeto file-like, y devuelve una tupla con la señal como array de Numpy en float64 y su frecuencia de muestreo. Internamente usa `soundfile.read()` para soportar tanto WAV como FLAC en un único llamado, que ya se encarga de la conversión de formato y de dejar la señal en punto flotante. Antes de leer, si la entrada es una ruta en disco se verifica explícitamente que el archivo exista, lanzando un "FileNotFoundError" con un mensaje claro en vez de dejar que falle más abajo con un error críptico de la librería; cualquier otro problema de lectura (formato no soportado, archivo corrupto) se recaptura como "ValueError". Finalmente, la señal se normaliza dividiendo por su valor absoluto máximo y escalando a 0.9.
 
@@ -315,7 +315,7 @@ Un objeto file-like ("similar a un archivo") es cualquier objeto de Python que s
 
 Esta función cuenta con siete tests. Se verifica que una ruta inexistente lance FileNotFoundError; que la carga básica de un WAV mono funcione correctamente, chequeando forma, frecuencia de muestreo y normalización; que un archivo corrupto (bytes que no son audio) se traduzca en un ValueError; y que la señal devuelta quede siempre dentro de −1 y 1. Los tres restantes cubren la selección de canal: que, sin especificar nada, un archivo estéreo devuelva el canal L por defecto; que pasando explícitamente el canal "R" se obtenga el canal derecho; y que pedir un canal inexistente (por nombre o por índice fuera de rango) lance ValueError.
 
-## 3.4.2 Filtro de banda de octava
+### 3.4.2 Filtro de banda de octava
 
 Para conocer los parámetros acústicos no basta con un índice global en todas las frecuencias, dado que el comportamiento en cada frecuencia es crucial para el análisis acústico. Es por eso que los software de medición de parámetros acústicos reportan sus datos en bandas. En este caso la API cuenta con un filtro únicamente de ancho de banda de octava. Esa es la finalidad de la función `filtro_octava()`, que recibe como entrada a la señal, la frecuencia central de la banda deseada, la frecuencia de muestreo y el orden del filtro Butterworth (por defecto 4). Como resultado devuelve un array con la señal filtrada en la banda seleccionada.
 
@@ -327,7 +327,7 @@ Puntualmente, `filtro_octava()` calcula primero las frecuencias de corte inferio
 
 Esta función cuenta con tres tests. El primero verifica que una senoidal exactamente en la frecuencia central de la banda pase prácticamente sin atenuación (ganancia menor a 1 dB), comparando el RMS de la señal antes y después de filtrar. El segundo comprueba lo contrario: senoidales a la mitad y al doble de la frecuencia central (es decir, fuera de la banda de octava) deben atenuarse más de 20 dB. El tercero valida la respuesta en frecuencia del filtro contra la definición teórica de una banda de octava: calcula la respuesta con `scipy.signal.freqz` y confirma que la ganancia sea máxima (~0 dB) en la frecuencia central, y de exactamente −3 dB en ambas frecuencias de corte.
 
-## 3.4.3 Síntesis de respuesta al impulso artificial
+### 3.4.3 Síntesis de respuesta al impulso artificial
 
 Para validar los cálculos de los parámetros acústicos resulta conveiniente generar una RI cuyo T60 real ya se conozca de antemano, algo que no se puede garantizar con una RI medida en un recinto real. Ese es el propósito de `sintetizar_ri()`: recibe un diccionario `{frecuencia_central: T60}` por banda, la frecuencia de muestreo y la duración deseada, y devuelve una respuesta al impulso artificial que decae exactamente con esos T60 conocidos, banda por banda.
 
@@ -347,7 +347,7 @@ Finalmente, el resultado final se normaliza dividiendo por su valor absoluto má
 
 Esta función cuenta con dos tests. El primero simplemente verifica que la duración de la RI generada coincida con la solicitada, en cantidad de muestras. El segundo es el más relevante: genera una RI con un T60 objetivo conocido (2.0 s) en la banda de 1000 Hz, filtra el resultado por esa misma banda, calcula su integral de Schroeder en dB, y mide en qué instante la curva cruza los −60 dB. Ese T60 medido se compara contra el T60 objetivo con una tolerancia del 10%, confirmando que el modelo de síntesis (ruido filtrado + envolvente exponencial) efectivamente produce el tiempo de reverberación esperado y no solo una forma de onda que decae "más o menos" como se espera.
 
-## 3.4.4 Obtención de RI a partir de la grabación de un sweep senoidal
+### 3.4.4 Obtención de RI a partir de la grabación de un sweep senoidal
 
 Un servicio vital del proyecto es `obtener_ri_desde_sweep()`, que permite obtener la respuesta al impulso de un recinto a partir de la grabación real de un sine sweep. Recibe la grabación y el filtro inverso del sweep utilizado (los mismos que devuelve `generar_sine_sweep()`), y devuelve la RI estimada, ya recortada y normalizada.
 
@@ -387,7 +387,7 @@ La figura 6 muestra cómo queda la señal finalmente devuelta por `obtener_ri_de
 
 Esta función cuenta con un test que valida el caso de uso completo de punta a punta: genera un sweep y su filtro inverso, define una RI conocida (un tono de 1000 Hz con decaimiento exponencial), simula la grabación convolucionando el sweep con esa RI, y aplica `obtener_ri_desde_sweep()` sobre esa grabación simulada. Como el recorte por onset puede introducir un pequeño desfasaje temporal entre la RI original y la recuperada, la comparación no se hace muestra a muestra sino por correlación cruzada normalizada entre ambas señales, calculada con `correlate` de `scipy.signal`, exigiendo que el pico de correlación supere 0.9, es decir, que la forma de onda recuperada sea prácticamente idéntica a la original, sea cual sea el corrimiento temporal que haya introducido la detección del onset.
 
-## 3.4.5 Cambio de escala: La escala logarítmica
+### 3.4.5 Cambio de escala: La escala logarítmica
 
 Muchos de los gráficos y funciones del proyecto (la curva de Schroeder, la envolvente de una RI, etc) se entienden mejor en escala logarítmica que en amplitud lineal, porque el oído y los parámetros acústicos de la norma trabajan en dB. Esa conversión la hace `a_escala_log()`, calculando el nivel en decibeles según la ecuación 16:
 
@@ -399,9 +399,9 @@ Antes de calcular el logaritmo, la función le aplica un piso a la relación de 
 
 Esta función tiene tres tests, todos con señales simples y valores conocidos de antemano para poder verificar el cálculo a mano. Uno confirma que el valor máximo de la señal de entrada efectivamente se traduce en 0 dB en la salida. Otro simplemente chequea que el tipo de retorno sea un array de Numpy. El último es el más significativo desde lo acústico toma una señal con un valor que es exactamente la mitad de otro, y verifica que la diferencia entre ambos en la salida sea de −6 dB.
 
-### 3.5 Milestone 3 — Análisis acústico y API REST
+## 3.5 Milestone 3 — Análisis acústico y API REST
 
-## 3.5.1 Suavizado de señales
+### 3.5.1 Suavizado de señales
 
 A la hora de representar visualmente una respuesta al impulso, los gráficos reales contienen fluctuaciones muy rápidas entre muestras que dificultan visualizar la tendencia de decaimiento. Es por eso que resulta conveniente aplicar un método de suavizado que permita reducir estas fluctuaciones. De eso se encarga `suavizar_signal()`, que admite dos modos de suavizado según el parámetro "ventana".
 
@@ -421,7 +421,7 @@ No obstante ambos modos son válidos, y el método de la media móvil puede resu
 
 Finalmente, esta función cuenta con tres tests. Dos validan el modo Hilbert: uno confirma que la envolvente resultante nunca sea negativa (por ser un valor absoluto, tiene que cumplirse siempre), y otro que la señal suavizada conserve la misma longitud que la señal de entrada. El tercero valida el modo de media móvil, comprobando también que preserve la longitud original.
 
-## 3.5.2 Integral de Schroeder
+### 3.5.2 Integral de Schroeder
 
 Tal como se planteó en la ecuación 9 del marco teórico, la curva de decaimiento energético se obtiene sumando, para cada instante $n$, toda la energía restante de la señal desde $n$ hasta el final. Esa es la responsabilidad de `integral_schroeder()`, recibir una RI (idealmente ya filtrada por banda) y devolver la curva de decaimiento en dB, normalizada a 0 dB en su primer valor.
 
@@ -433,7 +433,7 @@ De modo que la curva siempre arranca en 0 dB, es decir, con toda la energía tod
 
 Esta función cuenta con cuatro tests. Los dos primeros son de forma: que la curva devuelta tenga la misma longitud que la RI de entrada, y que su primer valor sea efectivamente 0 dB. El tercero verifica que la curva sea monótonamente decreciente en toda su extensión, una propiedad que se cumple por construcción matemática (nunca se le puede sumar energía negativa a la integral) y que sirve como chequeo de que la implementación no tenga errores de signo o de indexado. El cuarto es el más relevante desde lo acústico. Se sintetiza una RI con un T60 conocido de antemano, calcula su integral de Schroeder, ajusta una recta por mínimos cuadrados en el rango típico de T30 (−5 a −35 dB), y verifica que el T60 estimado a partir de esa pendiente esté dentro de un 30% del valor real usado para sintetizar la señal, confirmando que la curva no solo decrece, sino que lo hace a la velocidad correcta.
 
-## 3.5.4 Regresión lineal
+### 3.5.4 Regresión lineal
 
 En `regresion_lineal()` se implementa el método de cuadrados mínimos planteado en el marco teórico (ecuaciones 10 a 13). Recibe dos arrays, típicamente el tiempo y la curva de Schroeder en dB dentro del rango de interés, y devuelve la pendiente $m$, la ordenada al origen $b$ y el coeficiente de determinación $R^2$, calculados exactamente según esas mismas fórmulas.
 
@@ -443,7 +443,7 @@ Vale aclarar que esta función solo calcula el ajuste, no decide si ese ajuste e
 
 Esta función tiene tres tests. El primero verifica el caso más simple: una recta perfectamente conocida ($y = 2x + 1$, sin ruido), confirmando que la pendiente y la ordenada recuperadas coincidan con los valores exactos usados para generarla. El segundo confirma que, para datos perfectamente lineales, el $R^2$ calculado sea exactamente 1.0, el máximo posible. El tercero prueba un caso más realista: una recta conocida ($y = 3x + 5$) a la que se le agrega ruido gaussiano, y verifica que la pendiente y la ordenada estimadas sigan estando razonablemente cerca de los valores reales pese al ruido, validando que el método sea robusto a pequeñas perturbaciones, no solo exacto en el caso ideal sin ruido.
 
-## 3.5.5 Método Lundeby
+### 3.5.5 Método Lundeby
 
 El método Lundeby (Lundeby et al., 1995) es un método para truncar el piso de ruido de la curva de Schroeder. El problema de la integral de Schroeder es que no sabe dónde empieza el ruido, por lo que si se le da una RI de mucha duración, considerará al piso de ruido en la integral y eso resultará posteriormente en un peor ajuste lineal. Para solventar esta carencia, el método Lundeby propone separar al tiempo en bloques de 10 ms (ventanas), hacer una estimación del nivel del piso de ruido utilizando el último 10% de la señal, buscar el primer bloque donde la energía cae dentro de un margen de 10 dB cercanos al piso de ruido, y realizar un ajuste lineal entre el inicio de la curva y ese bloque. Luego, se busca la intersección entre esa recta ajustada y el piso de ruido calculado, y promedia el nivel de la señal luego de esa intersección, para obtener un nuevo nivel de piso de ruido y así repetir todo el proceso nuevamente.  
 
@@ -455,7 +455,7 @@ Esta función cuenta con cuatro tests. Uno verifica simplemente los tipos de ret
 
 En síntesis, la función recibe como parámetros a la respuesta al impulso y la frecuencia de muestreo, y devuelve una tupla con el índice del truncamiento (como entero) y el nivel de piso de ruido (como flotante).
 
-## 3.5.6 Cálculo de parámetros acústicos 
+### 3.5.6 Cálculo de parámetros acústicos 
 
 Esta es la función vital de la API, donde se reúne todo lo desarrollado hasta ahora en Milestone 3. Se trata de `calcular_parametros_acusticos()`, quien recibe como entrada la respuesta al impulso completa, la frecuencia de muestreo y un flag (usar_lundeby), y devuelve un diccionario con EDT, T10, T20, T30, D50, C80 y además la relación señal/ruido (SNR) estimada, cada uno con un valor por banda de octava (125 Hz a 16 kHz).
 
@@ -475,7 +475,7 @@ Entre las decisiones de esta función vale mencionar que, si la RI de entrada ll
 
 Esta función cuenta con cinco tests. El primero sintetiza una RI con un T60 conocido, y el T30 calculado a 1000 Hz debe caer dentro de un 20% de ese valor real. Otro confirma que D50 siempre quede acotado entre 0% y 100% en todas las bandas, tal como exige su propia definición. Un tercero construye una señal con energía deliberadamente concentrada en los primeros 10 ms y comprueba que su C80 resulte positivo, como corresponde cuando predomina la energía temprana. El cuarto valida la forma de la respuesta, es decir, que el diccionario devuelto contenga las seis claves de parámetros esperadas y que cada una tenga un valor para cada banda de octava. El último repite el test del T30 conocido pero forzando explícitamente `usar_lundeby=True`, confirmando que el camino con truncamiento de Lundeby activo también produzca un resultado válido y no solo el camino más simple sin truncar.
 
-## 3.5.7 Convolución con audio
+### 3.5.7 Convolución con audio
 
 Como se mencionó en la introducción, además del análisis de parámetros la API ofrece una herramienta de validación subjetiva. Permite aplicarle la reverberación de una RI (medida o sintética) a un audio seco cualquiera, para poder escuchar el resultado. De eso se encarga `convolucionar()`, que recibe el audio seco, la RI, y la frecuencia de muestreo de cada uno por separado, y devuelve el audio ya convolucionado.
 
@@ -489,7 +489,7 @@ Al final, el resultado de la convolución decidió normalizarse a 0.9 de pico pa
 
 Esta función cuenta con seis tests. Uno verifica que la longitud de la salida sea exactamente la que corresponde a una convolución, es decir, que la cantidad de muestras totales se la suma de las individuales menos 1. Otro confirma que el pico de la salida quede normalizado a 0.9. Un tercero chequea que el tipo de dato de salida sea efectivamente float32, aunque las entradas se pasen como float64. Otro valida un caso trivial pero importante: si el audio de entrada es silencio absoluto, la salida también debe ser silencio absoluto (nada de ruido numérico introducido por la convolución). Los dos últimos cubren el resampleo: uno verifica que, con frecuencias de muestreo distintas entre audio y RI, la longitud de la salida sea coherente con la RI ya resampleada al fs del audio; mientras que el otro confirma el caso contrario, que si ambas frecuencias coinciden no se aplique ningún resampleo y la longitud de salida sea exactamente la esperada sin ninguna corrección de por medio.
 
-### 3.6 API REST
+## 3.6 API REST
 
 La API expone toda la funcionalidad como endpoints HTTP, resumidos en la Tabla 3:
 
