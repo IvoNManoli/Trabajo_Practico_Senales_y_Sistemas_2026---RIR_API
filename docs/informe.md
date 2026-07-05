@@ -404,6 +404,8 @@ El método Lundeby es un método para truncar el piso de ruido de la curva de Sc
 
 La función `metodo_lundeby()` implementa este algoritmo llamando directamente a `regresion_lineal()`,definiendo una función auxiliar interna llamada `_primer_cruce_sostenido()`.En vez de tomar como válido el primer bloque que cae por debajo del umbral, esa función auxiliar exige varios bloques consecutivos por debajo del margen de 10 dB, y descarta cualquier candidato dentro de los primeros bloques de la señal, precisamente para no confundir un nulo modal aislado (algo típico en bandas graves como 125 Hz, donde hay poca densidad de modos) con el verdadero comienzo del piso de ruido. A esto se suma otra salvaguarda dentro del bucle principal: cada vez que se reestima el nivel de ruido tras un nuevo truncamiento, ese nuevo valor solo se acepta si no supera en más de 3 dB a la estimación de referencia inicial, evitando que el algoritmo entre en una realimentación positiva donde, iteración tras iteración, el truncamiento se corre cada vez más temprano devorando cola reverberante real en vez de ruido. El proceso se repite hasta que el punto de truncamiento deja de moverse de una iteración a la siguiente, con un tope de 15 iteraciones para garantizar que la función siempre termine.
 
+Se decidió implementar una corrección para respuestas al impulso con una caída inicial rápida seguida de una cola mucho más lenta antes de llegar al verdadero piso de ruido. En ese escenario, el primer cruce sostenido con  el piso de ruido más 10 dB puede tardar muchos segundos en aparecer, y ajustar la recta preliminar sobre todo ese tramo (caída rápida y cola lenta mezcladas) da una pendiente promedio que no representa a ninguna de las dos por separado, extrapolando el truncamiento a un punto intermedio sin sentido físico. Para evitarlo, se acota el tramo usado en esa regresión preliminar a como máximo cuatro veces el tiempo que la señal tarda en caer los primeros 20 dB desde el pico. De esa forma la recta se ajusta únicamente sobre la porción inicial y genuinamente lineal de la caída, sin verse arrastrada por el comportamiento de la cola.
+
 Esta función cuenta con cuatro tests. Uno verifica simplemente los tipos de retorno y que el índice de truncamiento devuelto esté dentro del rango válido de la señal. Otro confirma que, al agregarle ruido de fondo real a una RI sintetizada, el truncamiento efectivamente ocurra antes del final de la señal. Si ocurriese al final, significaría que no se está detectando ruido. Un tercero compara dos versiones de la misma RI, una limpia y otra con ruido agregado, y verifica que la versión ruidosa trunque en un punto más temprano que la limpia, tal como se espera si el algoritmo está reaccionando al ruido y no ignorándolo. El último valida la precisión de la estimación en sí, agrega ruido de fondo con un nivel conocido de antemano y verifica que el nivel de ruido estimado por la función esté dentro de ±6 dB del valor real.
 
 En síntesis, la función recibe como parámetros a la respuesta al impulso y la frecuencia de muestreo, y devuelve una tupla con el índice del truncamiento (como entero) y el nivel de piso de ruido (como flotante).
@@ -573,7 +575,7 @@ Puede visualizarse entonces que las herramientas de procesamiento de RIs obtiene
 
 La validación de la RI sintética con T60 conocido ya se describió al presentar los tests de `calcular_parametros_acusticos()`, donde se pedía que el T30 calculado sobre una RI sintetizada con T60 = 2.0 s caiga dentro de un 20% del valor real. Esta sección se enfoca en contrastar los parámetros calculados por la API contra REW (Room EQ Wizard), el software de referencia de la industria, usando RIs reales en vez de sintéticas.
 
-Se usaron las tres RIs previamente mencionadas: Elveden Hall, Maes Howe y la RI propia medida con `medir_ri.py`. Para cada una, se cargó el WAV en REW, se midió el tiempo de reverberación con filtro Zero Phase por octava, se exportó la tabla de resultados, y se comparó contra `calcular_parametros_acusticos()`.
+Se usaron las tres RIs previamente mencionadas: Elveden Hall, Maes Howe y la RI propia medida con `medir_ri.py`. Para cada una, se cargó el WAV en REW, se midió el tiempo de reverberación con filtro Zero Phase por octava, se exportó la tabla de resultados, y se comparó contra `calcular_parametros_acusticos()`. Además de EDT, T20 y T30, las tablas también incluyen la comparación de C80 y D50 contra REW.
 
 Antes de comparar los tiempos de reverberación, conviene visualizar la curva de Schroeder de cada RI junto con el truncamiento de Lundeby y las rectas de ajuste de T20 y T30, para entender de dónde sale cada número de la comparación.
 
@@ -581,95 +583,110 @@ La figura 18 muestra el caso de Elveden Hall: al ser una sala grande con alta de
 
 ![Curva de Schroeder — Elveden Hall](m3/Imagenes/schroeder_lundeby_t30_elveden_hall.png)
 
-*Figura 18: curva de Schroeder, truncamiento de Lundeby y ajuste T20/T30 — Elveden Hall.*
+*Figura 18: Curva de Schroeder, truncamiento de Lundeby y ajuste T20/T30 — Elveden Hall.*
 
-En la figura 19, la curva de Maes Howe muestra una curvatura visible antes del truncamiento — se "dobla" hacia una pendiente más suave a partir de los −45/−50 dB. Es consistente con el ruido de fondo real de la medición y con la baja densidad modal de un recinto tan pequeño en frecuencias bajas, que es exactamente el motivo por el que Lundeby trunca antes de que esa curvatura contamine la regresión.
+En la figura 19, la curva de Maes Howe muestra una curvatura visible antes del truncamiento, se dobla hacia una pendiente más suave a partir de los −45/−50 dB. Es consistente con el ruido de fondo real de la medición y con la baja densidad modal de un recinto tan pequeño en frecuencias bajas, que es exactamente el motivo por el que Lundeby trunca antes de que esa curvatura contamine la regresión.
 
 ![Curva de Schroeder — Maes Howe](m3/Imagenes/schroeder_lundeby_t30_maes_howe.png)
 
-*Figura 19: curva de Schroeder, truncamiento de Lundeby y ajuste T20/T30 — Maes Howe.*
+*Figura 19: Curva de Schroeder, truncamiento de Lundeby y ajuste T20/T30 — Maes Howe.*
 
 La figura 20 muestra el mismo comportamiento en la RI medida propia: la curva se aplana notoriamente después de los −40 dB antes de truncar, reflejando el piso de ruido real del entorno de grabación, a diferencia de una cámara anecoica o un recinto muy silencioso.
 
 ![Curva de Schroeder — RI medida](m3/Imagenes/schroeder_lundeby_t30_ri_medida.png)
 
-*Figura 20: curva de Schroeder, truncamiento de Lundeby y ajuste T20/T30 — RI medida (propia).*
+*Figura 20: Curva de Schroeder, truncamiento de Lundeby y ajuste T20/T30 — RI medida (propia).*
 
 Con esas curvas ya validadas visualmente, las figuras 21 a 23 comparan directamente el T30 calculado por banda de octava entre RIR-API y REW.
 
 ![T30 Elveden Hall — RIR-API vs REW](m3/Imagenes/t30_comparativa_elveden_hall.png)
 
-*Figura 21: comparación de T30 por banda, RIR-API vs REW — Elveden Hall.*
+*Figura 21: Comparación de T30 por banda, RIR-API vs REW — Elveden Hall.*
 
 ![T30 Maes Howe — RIR-API vs REW](m3/Imagenes/t30_comparativa_maes_howe.png)
 
-*Figura 22: comparación de T30 por banda, RIR-API vs REW — Maes Howe.*
+*Figura 22: Comparación de T30 por banda, RIR-API vs REW — Maes Howe.*
 
-En la figura 22, la banda de 125 Hz muestra la mayor divergencia de las seis bandas (2.317 s vs 2.730 s en Elveden Hall, 0.733 s vs 0.606 s en Maes Howe), consistente con la baja densidad modal a bajas frecuencias en recintos chicos, que hace que el resultado sea más sensible a diferencias finas entre el filtro de octava de RIR-API y el de REW. Aun así, ambos casos quedan dentro de la tolerancia de ±0.5 s que exige la consigna.
+En las  figuras 21 y 22, se observa que la banda de 125 Hz muestra la mayor divergencia, siendo 0,413 s de diferencia en el caso de Elveden Hall y 0,167 s en el de Maes Howe. Se sospecha que esto es debido a una particularidad de las respuestas al impulso seleccionadas, puesto que al comparar los valores obtenidos en REW también hay mucha diferencia con los informados en OpenAIR. Esto podría ser causado por la baja densidad modal a bajas frecuencias en recintos chicos, que hace que el resultado sea más sensible a diferencias finas entre el filtro de octava de RIR-API y el de REW. Aun así, ambos casos quedan dentro de una tolerancia de ±0.5 s.  
 
 ![T30 RI procesada — RIR-API vs REW](m3/Imagenes/t30_comparativa_ri_procesada_medida.png)
 
 *Figura 23: comparación de T30 por banda, RIR-API vs REW — RI procesada (medida).*
 
-La Tabla 4 resume la diferencia máxima (peor banda de las seis) entre RIR-API y REW, por parámetro y por RI, con la tolerancia de ±0.5 s que exige la consigna para EDT/T20/T30:
+Las Tablas 4, 5 y 6 muestran el detalle completo por banda (125 a 4000 Hz) de EDT, T20, T30, C80 y D50 para las tres RIs. La tolerancia considerada en los parámetros temporales es de ±0.5 s. Mientras que para el C80 se toma un parámetro aceptable de ±1 dB.
 
-| RI | EDT | T20 | T30 |
-|---|---|---|---|
-| Elveden Hall | 0.206 s ✓ | 0.291 s ✓ | 0.414 s ✓ |
-| Maes Howe | 0.196 s ✓ | 0.079 s ✓ | 0.127 s ✓ |
-| RI procesada (medida) | 0.029 s ✓ | 0.021 s ✓ | 0.023 s ✓ |
-
-*Tabla 4: diferencia máxima entre RIR-API y REW, por parámetro y por RI.*
-
-T20 y T30 pasan la validación en las tres RIs y en las seis bandas, ampliamente dentro de tolerancia — el peor caso es T30 en Elveden Hall a 125 Hz, con 0.414 s de diferencia (RIR-API = 2.317 s vs REW = 2.730 s), cercano al límite pero todavía dentro de los ±0.5 s.
-
-A modo de referencia, las Tablas 5, 6 y 7 muestran el detalle completo por banda (125 a 4000 Hz) de EDT, T20 y T30 para las tres RIs.
 
 | Parámetro | Banda (Hz) | RIR-API | REW | Diferencia | Dentro de tolerancia |
 |---|---|---|---|---|---|
-| EDT | 125 | 2.106s | 2.212s | -0.106s | Sí |
-| EDT | 250 | 3.178s | 3.384s | -0.206s | Sí |
-| EDT | 500 | 4.367s | 4.416s | -0.049s | Sí |
-| EDT | 1000 | 4.007s | 3.957s | +0.050s | Sí |
-| EDT | 2000 | 3.649s | 3.650s | -0.001s | Sí |
-| EDT | 4000 | 2.570s | 2.652s | -0.082s | Sí |
-| T20 | 125 | 2.336s | 2.627s | -0.291s | Sí |
-| T20 | 250 | 3.417s | 3.605s | -0.188s | Sí |
-| T20 | 500 | 4.311s | 4.255s | +0.056s | Sí |
-| T20 | 1000 | 4.124s | 4.119s | +0.005s | Sí |
-| T20 | 2000 | 3.895s | 3.859s | +0.036s | Sí |
-| T20 | 4000 | 2.792s | 2.903s | -0.111s | Sí |
-| T30 | 125 | 2.317s | 2.730s | -0.414s | Sí |
-| T30 | 250 | 3.408s | 3.567s | -0.159s | Sí |
-| T30 | 500 | 4.284s | 4.202s | +0.082s | Sí |
-| T30 | 1000 | 4.110s | 4.089s | +0.021s | Sí |
-| T30 | 2000 | 3.904s | 3.862s | +0.042s | Sí |
-| T30 | 4000 | 2.858s | 3.001s | -0.143s | Sí |
+| EDT | 125 | 2.125s | 2.212s | -0.087s | Sí |
+| EDT | 250 | 3.280s | 3.384s | -0.104s | Sí |
+| EDT | 500 | 4.490s | 4.416s | +0.074s | Sí |
+| EDT | 1000 | 3.939s | 3.957s | -0.018s | Sí |
+| EDT | 2000 | 3.665s | 3.650s | +0.015s | Sí |
+| EDT | 4000 | 2.578s | 2.652s | -0.074s | Sí |
+| T20 | 125 | 2.367s | 2.627s | -0.260s | Sí |
+| T20 | 250 | 3.482s | 3.605s | -0.123s | Sí |
+| T20 | 500 | 4.275s | 4.255s | +0.020s | Sí |
+| T20 | 1000 | 4.123s | 4.119s | +0.004s | Sí |
+| T20 | 2000 | 3.842s | 3.859s | -0.017s | Sí |
+| T20 | 4000 | 2.765s | 2.903s | -0.138s | Sí |
+| T30 | 125 | 2.250s | 2.730s | -0.480s | Sí |
+| T30 | 250 | 3.454s | 3.567s | -0.113s | Sí |
+| T30 | 500 | 4.194s | 4.202s | -0.008s | Sí |
+| T30 | 1000 | 4.088s | 4.089s | -0.001s | Sí |
+| T30 | 2000 | 3.843s | 3.862s | -0.019s | Sí |
+| T30 | 4000 | 2.836s | 3.001s | -0.165s | Sí |
+| C80 | 125 | -1.07dB | -0.74dB | -0.33dB | Sí |
+| C80 | 250 | -6.80dB | -5.65dB | -1.15dB | No |
+| C80 | 500 | -4.76dB | -5.06dB | +0.30dB | Sí |
+| C80 | 1000 | -6.89dB | -6.83dB | -0.06dB | Sí |
+| C80 | 2000 | -5.72dB | -5.55dB | -0.17dB | Sí |
+| C80 | 4000 | -2.79dB | -2.98dB | +0.19dB | Sí |
+| D50 | 125 | 31.2% | 32.6% | -1.4pp | — |
+| D50 | 250 | 8.6% | 12.1% | -3.5pp | — |
+| D50 | 500 | 15.6% | 14.6% | +1.0pp | — |
+| D50 | 1000 | 9.6% | 9.8% | -0.2pp | — |
+| D50 | 2000 | 11.1% | 11.7% | -0.6pp | — |
+| D50 | 4000 | 20.3% | 19.7% | +0.6pp | — |
 
-*Tabla 5: EDT, T20 y T30 por banda de octava, RIR-API vs REW — Elveden Hall.*
+*Tabla 4: EDT, T20, T30, C80 y D50 por banda de octava, RIR-API vs REW — Elveden Hall.*
 
 | Parámetro | Banda (Hz) | RIR-API | REW | Diferencia | Dentro de tolerancia |
 |---|---|---|---|---|---|
-| EDT | 125 | 0.631s | 0.596s | +0.035s | Sí |
-| EDT | 250 | 0.339s | 0.535s | -0.196s | Sí |
-| EDT | 500 | N/A | 0.402s | - | - |
-| EDT | 1000 | N/A | 0.252s | - | - |
-| EDT | 2000 | N/A | 0.301s | - | - |
+| EDT | 125 | 0.709s | 0.596s | +0.113s | Sí |
+| EDT | 250 | 0.451s | 0.535s | -0.084s | Sí |
+| EDT | 500 | 0.331s | 0.402s | -0.071s | Sí |
+| EDT | 1000 | 0.463s | 0.252s | +0.211s | Sí |
+| EDT | 2000 | 0.364s | 0.301s | +0.063s | Sí |
 | EDT | 4000 | N/A | N/A | - | - |
-| T20 | 125 | 0.689s | 0.610s | +0.079s | Sí |
-| T20 | 250 | 0.589s | 0.550s | +0.039s | Sí |
-| T20 | 500 | 0.519s | 0.507s | +0.012s | Sí |
-| T20 | 1000 | 0.528s | 0.492s | +0.036s | Sí |
-| T20 | 2000 | 0.451s | 0.433s | +0.018s | Sí |
-| T20 | 4000 | 0.458s | 0.382s | +0.076s | Sí |
-| T30 | 125 | 0.733s | 0.606s | +0.127s | Sí |
-| T30 | 250 | 0.611s | 0.579s | +0.032s | Sí |
-| T30 | 500 | 0.575s | 0.530s | +0.045s | Sí |
-| T30 | 1000 | 0.507s | 0.490s | +0.017s | Sí |
-| T30 | 2000 | 0.466s | 0.447s | +0.019s | Sí |
-| T30 | 4000 | 0.430s | 0.394s | +0.036s | Sí |
+| T20 | 125 | 0.751s | 0.610s | +0.141s | Sí |
+| T20 | 250 | 0.605s | 0.550s | +0.055s | Sí |
+| T20 | 500 | 0.615s | 0.507s | +0.108s | Sí |
+| T20 | 1000 | 0.513s | 0.492s | +0.021s | Sí |
+| T20 | 2000 | 0.432s | 0.433s | -0.001s | Sí |
+| T20 | 4000 | 0.415s | 0.382s | +0.033s | Sí |
+| T30 | 125 | 0.773s | 0.606s | +0.167s | Sí |
+| T30 | 250 | 0.628s | 0.579s | +0.049s | Sí |
+| T30 | 500 | 0.606s | 0.530s | +0.076s | Sí |
+| T30 | 1000 | 0.508s | 0.490s | +0.018s | Sí |
+| T30 | 2000 | 0.462s | 0.447s | +0.015s | Sí |
+| T30 | 4000 | 0.420s | 0.394s | +0.026s | Sí |
+| C80 | 125 | 7.52dB | 8.21dB | -0.69dB | Sí |
+| C80 | 250 | 10.50dB | 11.39dB | -0.89dB | Sí |
+| C80 | 500 | 13.22dB | 13.87dB | -0.65dB | Sí |
+| C80 | 1000 | 12.58dB | 16.64dB | -4.06dB | No |
+| C80 | 2000 | 14.72dB | 17.95dB | -3.23dB | No |
+| C80 | 4000 | 18.86dB | 22.63dB | -3.77dB | No |
+| D50 | 125 | 70.0% | 80.5% | -10.5pp | — |
+| D50 | 250 | 81.7% | 84.7% | -3.0pp | — |
+| D50 | 500 | 89.8% | 90.2% | -0.4pp | — |
+| D50 | 1000 | 85.2% | 95.0% | -9.8pp | — |
+| D50 | 2000 | 91.7% | 96.2% | -4.5pp | — |
+| D50 | 4000 | 97.0% | 98.5% | -1.5pp | — |
 
-*Tabla 6: EDT, T20 y T30 por banda de octava, RIR-API vs REW — Maes Howe.*
+N/A significa "no disponible"(not available). Esto es porque ninguno de los dos softwares pudo calcular EDT en esa banda. En el caso de la API, el ajuste en esa banda era muy malo, por lo que la API omitió reportar ese valor. Esto se debe probablemente a que se trata de una sala muy chica y a frecuencias suficientemente altes las primeras reflexiones llegan muy rápido y con mucha variabilidad entre sí. 
+
+*Tabla 5: EDT, T20, T30, C80 y D50 por banda de octava, RIR-API vs REW — Maes Howe.*
 
 | Parámetro | Banda (Hz) | RIR-API | REW | Diferencia | Dentro de tolerancia |
 |---|---|---|---|---|---|
@@ -681,60 +698,56 @@ A modo de referencia, las Tablas 5, 6 y 7 muestran el detalle completo por banda
 | EDT | 4000 | 0.263s | 0.237s | +0.026s | Sí |
 | T20 | 125 | 0.277s | 0.279s | -0.002s | Sí |
 | T20 | 250 | 0.313s | 0.292s | +0.021s | Sí |
-| T20 | 500 | 0.287s | 0.294s | -0.007s | Sí |
-| T20 | 1000 | 0.270s | 0.271s | -0.002s | Sí |
-| T20 | 2000 | 0.232s | 0.232s | +0.000s | Sí |
-| T20 | 4000 | 0.251s | 0.252s | -0.001s | Sí |
-| T30 | 125 | 0.515s | 0.500s | +0.015s | Sí |
-| T30 | 250 | 0.294s | 0.292s | +0.002s | Sí |
-| T30 | 500 | 0.387s | 0.365s | +0.022s | Sí |
-| T30 | 1000 | 0.286s | 0.284s | +0.002s | Sí |
-| T30 | 2000 | 0.279s | 0.266s | +0.013s | Sí |
-| T30 | 4000 | 0.324s | 0.301s | +0.023s | Sí |
+| T20 | 500 | 0.286s | 0.294s | -0.008s | Sí |
+| T20 | 1000 | 0.269s | 0.271s | -0.002s | Sí |
+| T20 | 2000 | 0.231s | 0.232s | -0.001s | Sí |
+| T20 | 4000 | 0.250s | 0.252s | -0.002s | Sí |
+| T30 | 125 | 0.514s | 0.500s | +0.015s | Sí |
+| T30 | 250 | 0.294s | 0.292s | +0.003s | Sí |
+| T30 | 500 | 0.380s | 0.365s | +0.015s | Sí |
+| T30 | 1000 | 0.282s | 0.284s | -0.002s | Sí |
+| T30 | 2000 | 0.267s | 0.266s | +0.001s | Sí |
+| T30 | 4000 | 0.292s | 0.301s | -0.009s | Sí |
+| C80 | 125 | 21.35dB | 22.26dB | -0.91dB | Sí |
+| C80 | 250 | 21.88dB | 23.97dB | -2.09dB | No |
+| C80 | 500 | 19.85dB | 20.67dB | -0.82dB | Sí |
+| C80 | 1000 | 16.95dB | 18.41dB | -1.46dB | No |
+| C80 | 2000 | 19.04dB | 21.03dB | -1.99dB | No |
+| C80 | 4000 | 17.97dB | 18.90dB | -0.93dB | Sí |
+| D50 | 125 | 96.2% | 97.2% | -1.0pp | — |
+| D50 | 250 | 98.3% | 98.7% | -0.4pp | — |
+| D50 | 500 | 95.7% | 97.7% | -2.0pp | — |
+| D50 | 1000 | 90.2% | 93.5% | -3.3pp | — |
+| D50 | 2000 | 93.2% | 95.7% | -2.5pp | — |
+| D50 | 4000 | 90.6% | 93.8% | -3.2pp | — |
 
-*Tabla 7: EDT, T20 y T30 por banda de octava, RIR-API vs REW — RI procesada (medida).*
+*Tabla 6: EDT, T20, T30, C80 y D50 por banda de octava, RIR-API vs REW — RI procesada (medida).*
 
-**Tolerancia exigida por la consigna:** ±0.5 s para EDT, T20 y T30.
+Como se puede apreciar, EDT, T20 y T30 quedan dentro del rango de tolerancia en las tres RIs. En cambio, para C80 se y D50 se observa que hay valores con una mayor desviación. Las causas de estas desviaciones aún se están investigando, pero por el momento no se tienen hipótesis.
 
 ### 4.4 Tests automatizados
 
-Se implementaron [COMPLETAR] tests en total:
-
-| Módulo | Tests | Estado |
-|--------|:-----:|:------:|
-| `test_generacion.py` (M1) | [N] | ✓ verde |
-| `test_procesamiento.py` (M2) | 13 | ✓ verde |
-| `test_analisis.py` (M3) | [N] | ✓ verde |
-| `test_api.py` (M3 endpoints) | [N] | ✓ verde |
+Todos los tests han pasado exitosamente, lo cual es un gran indicio del buen funcionamiento de la API. A su vez, el CI de github también se encuentra validado.
 
 ---
 
 ## 5. Conclusiones
 
-El sistema RIR-API implementa de forma completa el pipeline de medición y análisis acústico según ISO 3382-1: desde la generación de señales de excitación hasta el cálculo de parámetros acústicos por banda de octava, expuesto como API REST con documentación automática.
+El sistema RIR-API logra implementar de forma completa todo el flujo de trabajo de medición y análisis acústico según la norma ISO 3382, desde la generación de señales de excitación hasta el cálculo de parámetros acústicos por banda de octava. El trabajo ha resultado un gran desafío para sus integrantes puesto a que el contacto con las herramientas de programación e informática se encontraba inicialmente muy lejos del alcance de este proyecto. 
 
-**Resultados destacados:**
-- La SNR de 101.7 dB en el sine sweep supera en más de 60 dB el mínimo requerido, garantizando deconvoluciones de alta calidad.
-- El uso de `filtfilt` (fase cero) en los filtros de octava es una decisión crítica para la correcta temporización de la curva de Schroeder.
-- La regresión lineal manual permite interpretar directamente la calidad del decaimiento via R² y rechazar automáticamente bandas con piso de ruido o decaimiento irregular.
+La etapa de generación de señales y procesamiento de RI demostró resultados impecables, respaldados por gráficos que permiten la correcta visualización del funcionamiento de cada servicio.  En cuanto al análisis acústico, la API cumple con la tolerancia buscada frente a los parámetros acústicos temporales respecto a la comparación con el software comercial REW, mientras que los parámetros D50 y C80 presentan mayores desviaciones. Las causas de la desviaciones de estos parámetros aún se están investigando.
 
-**Limitaciones:**
-- Solo soporta archivos WAV/FLAC mono (señales estéreo son reducidas al canal 0).
-- Sin corrección de Lundeby por defecto: en grabaciones con SNR < 35 dB los parámetros T30 pueden ser imprecisos.
-- `sintetizar_ri` usa el modelo de campo difuso ideal, que no reproduce doble pendiente ni decaimientos no exponenciales.
+No obstante, aunque las diferencias cumplían con la tolerancia, se observó una mayor desviación en las comparaciones con REW en las bandas de 125 Hz para algunas de las RIs descargadas de OpenAIR. Mientras que para la RI medida, los parámetros difieren en muy poco margen. Una hipótesis sobre este asunto es que se deba a alguna característica modal en las respuestas al impulso seleccionadas, que sea muy sensible a alguna diferencia de filtros entre RIR-API y REW. Por otro lado, la API se comportaba perfectamente a la hora de analizar las diferencias con una RI sintetizada, detalle que brinda una validación al software. De todas formas, las fluctuaciones en esa banda deberán ser inspeccionadas y debe repetirse el proceso con diferentes respuestas al impulso para descartar posibles fallas en el algoritmo.
 
-**Trabajo futuro:**
-- Activar Lundeby por defecto con detección automática de SNR.
-- Agregar soporte multicanal (B-format para acústica espacial).
-- Implementar parámetros laterales (JLF, JLFC) según ISO 3382-1.
-- Implementar T60 via interpolación directa (sin extrapolar desde T30).
+Dentro de las limitaciones a destacar está el hecho de que solo se soportan archivos en formato WAV/FLAC, y aunque se acepten formatos estéreo, se termina descartando uno de los canales para realizar todo el procesamiento en uno de ellos. En el futuro se implementará un algoritmo que permita entregar la informaión de cada canal procesada por separado, de modo de no despreciar toda la información aportada en la medición de una RI, junto con un soporte multicanal para mediciones "B-format" de acústica espacial. Por otro lado, otra de las limitaciones actuales del proyecto es el hecho de que solo se permite realizar filtrados por tercios de octava. En el futuro se buscará ampliar este campo incluyendo un filtro de tercio de octava, seleccionable como un servicio aparte.
+
+Finalmente, otro de los aspectos posibles que pueden explotarse es el hecho de implementar el cálculo de piso de ruido del algoritmo lundeby para calcular el onset en la función que obtiene la respuesta al impulso desde el sweep, hecho que no se consideró inicialmente puesto que el desarrollo de la función de deconvolución fue previo a Lundeby.
 
 ---
 
 ## 6. Referencias
 
 - ISO 3382-1:2009. *Acoustics — Measurement of room acoustic parameters — Part 1: Performance spaces.* International Organization for Standardization.
-- IEC 61260-1:2014. *Electroacoustics — Octave-band and fractional-octave-band filters.* International Electrotechnical Commission.
 - Farina, A. (2000). *Simultaneous measurement of impulse response and distortion with a swept-sine technique.* 108th AES Convention, Paris.
 - Schroeder, M. R. (1965). New method of measuring reverberation time. *Journal of the Acoustical Society of America*, 37(3), 409–412.
 - Lundeby, A., Vigran, T. E., Bietz, H., & Vorländer, M. (1995). Uncertainties of measurements in room acoustics. *Acustica*, 81(4), 344–355.
@@ -743,27 +756,21 @@ El sistema RIR-API implementa de forma completa el pipeline de medición y anál
 
 ## Anexo: Log de Desarrollo con IA
 
+En `docs\IA.md` se encuentra el detalle de todas las entradas y salidas de la IA. Algunas conversaciones no han sido guardadas por inexperiencia con el uso.
+
 ### Herramientas utilizadas
 
-- **Claude Code (Anthropic)**: generación de código inicial, revisión de implementaciones, escritura de tests, documentación.
-- **[Completar otras herramientas si se usaron]**
+Para el desarrollo de esta API se utilizaron las siguientes herramientas de inteligencia artificial:
 
-### Interacción destacada
-
-**Prompt**: [Describir el prompt más útil que se le dio a la IA]
-
-**Respuesta**: [Resumen de lo que respondió]
-
-**Resultado**: [Cómo se usó, si funcionó, qué se modificó]
-
-### Interacción fallida
-
-**Prompt**: [Describir un caso donde la IA no fue útil o llevó por mal camino]
-
-**Problema**: [Por qué la respuesta no sirvió]
-
-**Lección**: [Qué se aprendió de esa experiencia]
+- **Claude Code (Anthropic)**: Generación de código inicial, revisión de implementaciones, escritura de tests, documentación y consultas teóricas.
+- **Google Gemini**: Consultas teóricas y primer acercamiento con inteligencia artificial.
 
 ### Reflexión general
 
-[300–500 palabras sobre la experiencia con IA durante el desarrollo del proyecto: impacto en el flujo de trabajo, cuándo fue valioso seguir las sugerencias y cuándo no, cómo cambió la forma de programar.]
+El desarrollo de este proyecto inicialmente se encontraba demasiado fuera del alcance de los conocimientos previos de los integrantes. Esto supuso una gran problemática, dado que los tiempos de realización del proyecto no hubiesen permitido investigar a fondo cada detalle necesario para poder realizar cada aspecto sin la necesidad de depender de herramientas de generación de código. Por ello, inicialmente se experimentó con asistentes que faciliten la comprensión de las ideas teóricas requeridas en el proyecto, para luego intentar redactar el código. El problema de esta metodología es que implicaba un tiempo de realización que no se correspondía con los plazos de entrega, por lo que se indagó en mayor profundidad en herramientas que permitan facilitar este aspecto. Además, al estar trabajando con inteligencia artificial vía web, resultaba muy difícil contextualizar al asistente sobre todas las problemáticas y dudas con el proyecto, por lo cual, siguiendo también la recomendación del profesor de la asignatura, se decidió optar por un tipo de asistente que sea integrable a VS Code y que pueda seguir el flujo de trabajo en tiempo real, Claude Code. Esto fue disparador de muchas posibilidades, dado que, con la asistencia directa de inteligencia artificial sobre el estado actual del proyecto, se tuvo un entendimiento mucho más profundo sobre cada aspecto necesario. No obstante, la mayor parte del código implementado en el software fue realizado por el asistente, por lo cual los integrantes adoptaron un rol de consultar la funcionalidad de cada línea de código y solicitar modificaciones pertinentes según el objetivo buscado. De todas formas, queda como un objetivo pendiente por fuera de la asignatura el hecho de desarrollar la sintaxis de código para permitir ser más selectivo con las intervenciones con el asistente. 
+
+En algunos casos, como por ejemplo en los gráficos, todos los scripts fueron generados, por lo que la interacción con la IA se limitó a solicitar correcciones en la visualización o en la escala de los mismos. Esto permitió ahorrar una gran cantidad de tiempo, puesto que no solo resultó imprescindible manejar con cierta experiencia a matplotlib, sino que aún teniendo la experiencia, la generación de código trivial resulta mucho más rápida.
+
+Dentro de las consideraciones finales, los integrantes del proyecto concuerdan en que el entendimiento más profundo de la redacción de código es un aspecto fundamental a seguir trabajando, pero por otro lado también se aprendió lo fundamental que resulta aprender a brindar contexto y solicitudes específicas a los asistentes virtuales, en un contexto internacional donde las herramientas de inteligencia artificial están en auge. Justamente, tener un entendimiento más profundo del código permitirá explotar estas herramientas en mucho más detalle, optimizando tiempos y logrando objetivos, como el de este proyecto, que de otra manera no hubiesen sido posibles de abarcar en su complejidad y amplitud.
+
+En cuanto la contextualización, se decidió crear un archivo, llamado CLAUDE.md, el cual fue actualizado luego de cada sesión para que en las futuras sesiones el asistente recupere todo el contexto necesario para poder retomar el proyecto.

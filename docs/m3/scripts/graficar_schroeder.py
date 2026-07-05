@@ -90,15 +90,23 @@ for nombre, ri, fs in ris:
     edc = integral_schroeder(ri_trunc)
     t = np.arange(len(edc)) / fs
 
+    # La integral de Schroeder cae abruptamente a -inf en las ultimas muestras
+    # del array integrado, ya que ahi no queda energia remanente por sumar
+    # (es un efecto de borde matematico, no un problema de la senal). Se
+    # recorta el ultimo 1.5% de la curva truncada antes de graficar para no
+    # mostrar esa caida artificial; no afecta el ajuste de T20/T30 porque ese
+    # tramo esta muy por debajo de los -35 dB que usa la regresion.
+    n_recorte = max(1, int(0.015 * len(edc)))
+    edc = edc[:-n_recorte]
+    t = t[:-n_recorte]
+
     mask_t20 = (edc <= -5.0) & (edc >= -25.0)
     pend20, ord20, _ = regresion_lineal(t[mask_t20], edc[mask_t20])
 
     mask_t30 = (edc <= -5.0) & (edc >= -35.0)
     pend30, ord30, _ = regresion_lineal(t[mask_t30], edc[mask_t30])
 
-    t_fondo_20 = (Y_BOTTOM - ord20) / pend20
-    t_fondo_30 = (Y_BOTTOM - ord30) / pend30
-    xlim_right = max(t[-1], t_fondo_20, t_fondo_30) * 1.05
+    xlim_right = t[-1]
 
     t_regr = np.linspace(0, xlim_right, 200)
     edc_regr_20 = pend20 * t_regr + ord20

@@ -324,11 +324,3 @@
 - *Prompt:* A los archivos de validación de M3 (txt y csv), pasalos a una carpeta `tablas_validacion`.
 - *Respuesta:* Se creó `docs/m3/tablas_validacion/` y se movieron los 5 archivos con `git mv`, quedando staged como `renamed` para el próximo commit.
 
----
-
-## Pendiente para próximas sesiones
-
-- Crear y pushear el tag `v0.2.0` en main
-- Endpoints FastAPI (routers, schemas) para M3
-- Informe final en Quarto/LaTeX
-- Validación contra REW con RIs reales de OpenAIR
