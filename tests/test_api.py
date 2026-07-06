@@ -184,7 +184,7 @@ class TestAcousticsEndpoints:
     """Tests para los endpoints de parametros acusticos."""
 
     def test_parameters_endpoint(self):
-        """Verifica que /parameters devuelve todos los parametros ISO 3382."""
+        """Verifica que /parameters devuelve un valor global (no por banda) por parametro."""
         wav_bytes = _generar_wav_bytes(duracion=2.0)
         response = client.post(
             "/api/v1/acoustics/parameters",
@@ -194,6 +194,26 @@ class TestAcousticsEndpoints:
         data = response.json()
         for param in ["EDT", "T10", "T20", "T30", "D50", "C80"]:
             assert param in data
+            assert isinstance(data[param], (float, int)) or data[param] is None
+
+    def test_parameters_global_es_promedio_500_1000(self):
+        """Verifica que el valor global de /parameters sea el promedio de 500 y 1000 Hz."""
+        wav_bytes = _generar_wav_bytes(duracion=2.0)
+        global_response = client.post(
+            "/api/v1/acoustics/parameters",
+            files={"file": ("test.wav", wav_bytes, "audio/wav")},
+        )
+        by_bands_response = client.post(
+            "/api/v1/acoustics/parameters/by-bands",
+            files={"file": ("test.wav", wav_bytes, "audio/wav")},
+        )
+        globales = global_response.json()
+        bandas = by_bands_response.json()["bandas_hz"]
+        for param in ["EDT", "T10", "T20", "T30", "D50", "C80"]:
+            val_500 = bandas["500"][param]
+            val_1000 = bandas["1000"][param]
+            if val_500 is not None and val_1000 is not None:
+                assert globales[param] == pytest.approx((val_500 + val_1000) / 2)
 
     def test_parameters_by_bands_endpoint(self):
         """Verifica que /parameters/by-bands reorganiza los resultados por banda."""

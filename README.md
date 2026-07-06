@@ -40,6 +40,10 @@ La API estara disponible en `http://localhost:8000`. Documentación interactiva 
 - Swagger UI: `http://localhost:8000/docs`
 - ReDoc: `http://localhost:8000/redoc`
 
+## API en producción
+
+La API también está desplegada en Render: https://trabajo-practico-senales-y-sistemas-2026.onrender.com/docs
+
 ## Estructura del proyecto
 
 ```
