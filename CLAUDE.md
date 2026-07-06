@@ -68,6 +68,7 @@ Tests en `tests/test_analisis.py` (19) y `tests/test_convolucion.py` (6): todos 
 - `filtro_octava` usa `sosfiltfilt`, no `filtfilt` con coeficientes `b, a` directos. En bandas bajas (125 Hz) con orden 4 (8 polos reales por la transformación pasabajos→pasabanda), la forma directa da `NaN` por mal condicionamiento numérico — verificado empíricamente, no es una preferencia estética.
 - `cargar_audio` (M2) no promedia canales de una señal estéreo (downmix) — selecciona un solo canal (parámetro `canal`, por defecto `"L"`). Promediar introduce cancelaciones tipo filtro peine entre canales desfasados.
 - `_calcular_tiempo()` (interna) centraliza el criterio de validez de un ajuste (R² < 0.8 o pendiente positiva → `None`), usado por EDT/T10/T20/T30 para no duplicar esa lógica cuatro veces.
+- `/api/v1/acoustics/parameters` devuelve un valor **global** por parámetro (promedio de las bandas de 500 y 1000 Hz, o la que esté disponible si falta una), no un desglose por banda — ese desglose es responsabilidad exclusiva de `/parameters/by-bands`. Antes ambos endpoints devolvían lo mismo por banda; se corrigió en `app/routers/acoustics.py`.
 
 ### API REST (FastAPI) — implementada
 
@@ -84,8 +85,8 @@ Routers en `app/routers/` (uno por dominio: `health.py`, `signals.py`, `filters.
 | `/api/v1/signals/synthetic-ir` | POST | Genera RI sintética con T60 por banda → WAV |
 | `/api/v1/filters/frequencies` | GET | Lista frecuencias centrales disponibles |
 | `/api/v1/filters/band` | POST | Filtra audio subido por banda de octava → WAV |
-| `/api/v1/acoustics/parameters` | POST | EDT/T10/T20/T30/D50/C80 por banda → JSON |
-| `/api/v1/acoustics/parameters/by-bands` | POST | Mismo resultado organizado por banda |
+| `/api/v1/acoustics/parameters` | POST | EDT/T10/T20/T30/D50/C80, valor global (promedio 500+1000 Hz) → JSON |
+| `/api/v1/acoustics/parameters/by-bands` | POST | Mismo cálculo, detallado por banda de octava |
 | `/api/v1/analysis/impulse-response` | POST | Análisis completo de una RI → JSON |
 | `/api/v1/utils/schroeder` | POST | Curva de Schroeder de una RI → JSON |
 | `/api/v1/utils/smoothing` | POST | Envolvente suavizada → JSON |
