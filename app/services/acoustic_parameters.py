@@ -213,29 +213,6 @@ def calcular_parametros_acusticos(
     return resultado
 
 
-def _primer_cruce_sostenido(
-    energia_db: np.ndarray, umbral: float, minimo_indice: int, consecutivos: int
-) -> int:
-    """Busca el primer intervalo donde la energia se mantiene bajo ``umbral``.
-
-    Exige ``consecutivos`` intervalos seguidos por debajo del umbral (en vez de
-    aceptar el primero que lo cruce) para no confundir un nulo modal transitorio
-    -tipico del batido entre modos en bandas de baja frecuencia con poca densidad
-    modal, como 125 Hz- con el verdadero cruce hacia el piso de ruido. Tampoco
-    considera candidatos antes de ``minimo_indice``, para no aceptar un cruce
-    basado en muy pocos puntos.
-
-    Retorna el ultimo indice (``len(energia_db) - 1``) si no encuentra ningun
-    cruce sostenido.
-    """
-    bajo_umbral = energia_db <= umbral
-    n = len(bajo_umbral)
-    for i in range(minimo_indice, n - consecutivos + 1):
-        if bajo_umbral[i : i + consecutivos].all():
-            return i
-    return n - 1
-
-
 def metodo_lundeby(ri: np.ndarray, fs: int) -> tuple[int, float]:
     """Determina el punto de truncamiento de la RI usando el metodo de Lundeby.
 
@@ -282,44 +259,17 @@ def metodo_lundeby(ri: np.ndarray, fs: int) -> tuple[int, float]:
     nivel_ruido = float(np.mean(energia_int[-n_ruido_int:]))
     nivel_ruido_referencia = nivel_ruido
 
-    # Minimo de intervalos antes de aceptar el cruce preliminar (~100 ms) y
-    # cantidad de intervalos consecutivos que deben estar bajo el umbral para
-    # confirmarlo (~50 ms). Sin esto, un nulo modal aislado en los primeros
-    # intervalos (comun en bandas de baja frecuencia con poca densidad modal)
-    # se toma como si fuera el piso de ruido, la regresion preliminar se hace
-    # sobre 2-3 puntos y da una pendiente sin sentido -> truncamiento absurdamente
-    # temprano.
-    min_intervalos_regresion = 10
-    consecutivos_cruce = 5
-
-    # Tiempo (en intervalos) hasta que la energia cae 20 dB desde el pico.
-    # Sirve para acotar el tramo usado en la regresion preliminar: si el piso
-    # de ruido es muy profundo y la RI tiene una cola de decaimiento secundario
-    # mucho mas lenta que la caida inicial (decaimiento de doble pendiente),
-    # el cruce con "ruido + 10 dB" puede tardar muchos segundos en llegar. Sin
-    # este limite, la regresion se ajusta sobre todo ese tramo curvo (caida
-    # rapida + cola lenta) en vez de solo la caida inicial, promediando ambas
-    # pendientes y extrapolando el cruce a un punto intermedio erroneo en vez
-    # de al final real de la caida rapida.
-    energia_db_inicial = 10.0 * np.log10(np.maximum(energia_int, _EPS))
-    pico_db = float(np.max(energia_db_inicial))
-    idx_20db = int(np.argmax(energia_db_inicial <= pico_db - 20.0))
-    if idx_20db == 0 and energia_db_inicial[0] > pico_db - 20.0:
-        idx_20db = n_intervals - 1
-    max_intervalos_regresion = max(min_intervalos_regresion * 2, idx_20db * 4)
-
     idx_trunc_int = n_intervals - 1
 
     for _ in range(15):
         nivel_ruido_db = 10.0 * np.log10(max(nivel_ruido, _EPS))
         energia_db = 10.0 * np.log10(np.maximum(energia_int, _EPS))
 
-        idx_cruce = _primer_cruce_sostenido(
-            energia_db, nivel_ruido_db + 10.0, min_intervalos_regresion, consecutivos_cruce
-        )
-        if idx_cruce < min_intervalos_regresion:
+        # Cruce preliminar: primer intervalo por debajo de "ruido + 10 dB"
+        bajo_umbral = energia_db <= nivel_ruido_db + 10.0
+        if not bajo_umbral.any():
             break
-        idx_cruce = min(idx_cruce, max_intervalos_regresion)
+        idx_cruce = int(np.argmax(bajo_umbral))
 
         # Regresion lineal desde el inicio hasta el cruce preliminar
         pendiente, ordenada, _ = regresion_lineal(t_int[:idx_cruce], energia_db[:idx_cruce])
